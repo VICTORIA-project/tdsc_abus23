@@ -5,3 +5,22 @@ The description of the challenge can be found on the [grand challenge website](h
 
 ## How to run YOLOv8:
 https://docs.ultralytics.com/quickstart/
+
+<!-- Structure of the repository-->
+## Structure of the repository
+
+```
+.
+├── README.md
+├── data
+│   ├── challenge_2023
+│   │   ├── TRAIN (original)
+│   │   │   ├── DATA
+│   │   │   ├── MASKS
+│   │   └── only_lesion
+│   │       ├── image_mha
+│   │       ├── label_mha
+├── checkpoints (for SAMed)
+│   ├── epoch_159.pth (LoRA pretrained on Med)
+│   ├── sam_vit_b_01ec64.pth (SAM pretrained)
+├── SAMed (cloned from original repo)
