@@ -54,6 +54,7 @@ from monai.transforms import (
     LabelToMaskd
 )
 from PIL import Image
+import wandb
 
 # extra imports
 sys.path.append(str(repo_path / 'SAMed'))
@@ -62,7 +63,7 @@ from SAMed.segment_anything import build_sam, SamPredictor
 from SAMed.segment_anything import sam_model_registry
 from SAMed.segment_anything.modeling import Sam
 
-class Fetal_dataset(Dataset):
+class ABUS_dataset(Dataset):
     
     def __init__(self, list_dir, transform=None):
         self.transform = transform  # using transform in torch!
@@ -173,6 +174,7 @@ def main():
     checkpoint_dir = repo_path / 'checkpoints'
     root_path = repo_path / 'data/challange_2023/only_lesion'
 
+    ### make the split and get files list
     # we make a split of our 100 ids
     kf = KFold(n_splits=5,shuffle=True,random_state=0)
     for fold_n, (train_ids, val_ids) in enumerate(kf.split(range(100))):
@@ -207,8 +209,8 @@ def main():
     device=0 # device id
 
     # define datasets, notice that the inder depends on the fold
-    db_train = Fetal_dataset(transform=train_transform,list_dir=list_train)
-    db_val = Fetal_dataset(transform=val_transform,list_dir=list_val)
+    db_train = ABUS_dataset(transform=train_transform,list_dir=list_train)
+    db_val = ABUS_dataset(transform=val_transform,list_dir=list_val)
 
     # define dataloaders
     trainloader = DataLoader(db_train, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
@@ -219,11 +221,11 @@ def main():
     os.makedirs(lora_weights,exist_ok=True)
 
     # register SAM model
-    sam, img_embedding_size = sam_model_registry['vit_b'](image_size=256,
-                                                                num_classes=num_classes,
-                                                                checkpoint=str(checkpoint_dir / 'sam_vit_b_01ec64.pth'),
-                                                                pixel_mean=[0, 0, 0],
-                                                                pixel_std=[1, 1, 1])
+    sam, _ = sam_model_registry['vit_b'](image_size=256,
+                                        num_classes=num_classes,
+                                        checkpoint=str(checkpoint_dir / 'sam_vit_b_01ec64.pth'),
+                                        pixel_mean=[0, 0, 0],
+                                        pixel_std=[1, 1, 1])
 
     pkg = import_module('sam_lora_image_encoder')
     net = pkg.LoRA_Sam(sam, 4).to(device)
