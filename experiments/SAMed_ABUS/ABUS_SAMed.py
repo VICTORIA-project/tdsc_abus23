@@ -11,24 +11,30 @@ os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
 # Libraries
-from scipy.ndimage import zoom
-from einops import repeat
-from icecream import ic
 from sklearn.model_selection import KFold
-from sklearn.metrics import jaccard_score
-import matplotlib.pyplot as plt
 import SimpleITK
 import numpy as np
+
+# accelerate
+from accelerate.utils import ProjectConfiguration, set_seed
+from accelerate import Accelerator
+from accelerate.logging import get_logger
 
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 import torch.optim as optim
 from torch.nn.modules.loss import CrossEntropyLoss
-from tensorboardX import SummaryWriter
 import logging
 from tqdm import tqdm
 from importlib import import_module
+import wandb
+
+# from scipy.ndimage import zoom
+# from einops import repeat
+# from icecream import ic
+# from sklearn.metrics import jaccard_score
+# from PIL import Image
 
 from monai.transforms import (
     Activations,
@@ -53,15 +59,14 @@ from monai.transforms import (
     EnsureType,
     LabelToMaskd
 )
-from PIL import Image
-import wandb
 
 # extra imports
 sys.path.append(str(repo_path / 'SAMed'))
-from SAMed.utils import DiceLoss, Focal_loss
-from SAMed.segment_anything import build_sam, SamPredictor
 from SAMed.segment_anything import sam_model_registry
-from SAMed.segment_anything.modeling import Sam
+from SAMed.utils import DiceLoss #, Focal_loss
+
+# from SAMed.segment_anything import build_sam, SamPredictor
+# from SAMed.segment_anything.modeling import Sam
 
 class ABUS_dataset(Dataset):
     
@@ -105,7 +110,42 @@ def calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, dice_weight:floa
     loss = (1 - dice_weight) * loss_ce + dice_weight * loss_dice
     return loss, loss_ce, loss_dice
 
+logger = get_logger(__name__)
+
 def main():
+
+    ### make the split and get files list
+    # we make a split of our 100 ids
+    kf = KFold(n_splits=5,shuffle=True,random_state=0)
+    for fold_n, (train_ids, val_ids) in enumerate(kf.split(range(100))):
+        break
+
+    # paths
+    experiment_path = repo_path / 'experiments/SAMed_ABUS'
+    checkpoint_dir = repo_path / 'checkpoints'
+    logging_dir = experiment_path / f'results/fold{fold_n}/logs' # path for logging
+    root_path = repo_path / 'data/challange_2023/with_lesion'
+
+    # accelerator
+    accelerator_project_config = ProjectConfiguration()
+    accelerator = Accelerator( # start accelerator
+        gradient_accumulation_steps=1,
+        mixed_precision="fp16", 
+        log_with='wandb', # logger (tb or wandb)
+        logging_dir=logging_dir, # defined above
+        project_config=accelerator_project_config, # project config defined above
+    )
+    # Make one log on every process with the configuration for debugging.
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        datefmt="%m/%d/%Y %H:%M:%S",
+        level=logging.INFO,
+    )
+
+    logger.info(accelerator.state, main_process_only=False)
+    # training seed
+    set_seed(42)
+
 
     # Transforms
     deform = Rand2DElasticd(
@@ -118,7 +158,6 @@ def main():
         translate_range=(20, 20),
         padding_mode="zeros",
         mode=['bilinear','nearest']
-        # device=self.device,
     )
 
     affine = RandAffined(
@@ -128,7 +167,6 @@ def main():
         scale_range=(0.2, 0.2),
         translate_range=(20, 20),
         padding_mode="zeros",
-        # device=self.device
         mode=['bilinear','nearest']
 
     )
@@ -170,15 +208,21 @@ def main():
         ])
 
     # define paths, get list of images and labels and split them into train and test
-    experiment_path = repo_path / 'experiments/SAMed_ABUS'
-    checkpoint_dir = repo_path / 'checkpoints'
-    root_path = repo_path / 'data/challange_2023/only_lesion'
 
-    ### make the split and get files list
-    # we make a split of our 100 ids
-    kf = KFold(n_splits=5,shuffle=True,random_state=0)
-    for fold_n, (train_ids, val_ids) in enumerate(kf.split(range(100))):
-        break
+
+    # HP
+    base_lr = 0.001
+    num_classes = 2
+    batch_size = 16
+    multimask_output = True
+    warmup=False
+    max_epoch = 100
+    save_interval = 5
+    iter_num = 0
+    warmup_period=1000
+
+
+    
 
     path_images = (root_path / "image_mha")
     path_labels = (root_path / "label_mha")
@@ -190,50 +234,37 @@ def main():
 
     image_files = np.array([path_images / i for i in train_files])
     label_files = np.array([path_labels / i for i in train_files])
-    list_train = [image_files, label_files]
+    list_train = [image_files, label_files] # this is what we will pass to the dataset <-
 
     image_files = np.array([path_images / i for i in val_files])
     label_files = np.array([path_labels / i for i in val_files])
-    list_val = [image_files, label_files]
-
-    # HP
-    base_lr = 0.001
-    num_classes = 2
-    batch_size = 16
-    multimask_output = True
-    warmup=0
-    max_epoch = 100
-    save_interval = 5
-    iter_num = 0
-    warmup_period=1000
-    device=0 # device id
+    list_val = [image_files, label_files] # this is what we will pass to the dataset <-
 
     # define datasets, notice that the inder depends on the fold
     db_train = ABUS_dataset(transform=train_transform,list_dir=list_train)
-    db_val = ABUS_dataset(transform=val_transform,list_dir=list_val)
+    db_val = ABUS_dataset(transform=val_transform,list_dir=list_val)   
 
     # define dataloaders
     trainloader = DataLoader(db_train, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
     valloader = DataLoader(db_val, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
 
     # the lora parameters folder is created to save the weights
-    lora_weights = experiment_path / f'results_load_more/{fold_n}'
+    lora_weights = experiment_path / f'weights/fold{fold_n}'
     os.makedirs(lora_weights,exist_ok=True)
 
-    # register SAM model
+    # get SAM model
     sam, _ = sam_model_registry['vit_b'](image_size=256,
                                         num_classes=num_classes,
                                         checkpoint=str(checkpoint_dir / 'sam_vit_b_01ec64.pth'),
                                         pixel_mean=[0, 0, 0],
                                         pixel_std=[1, 1, 1])
-
+    # load lora model
     pkg = import_module('sam_lora_image_encoder')
-    net = pkg.LoRA_Sam(sam, 4).to(device)
+    net = pkg.LoRA_Sam(sam, 4)
     # net.load_lora_parameters(str(checkpoint_dir / 'epoch_159.pth' ))
     model=net
-    print("The length of train set is: {}".format(len(db_train)))
-
     model.train()
+    
     # metrics
     ce_loss = CrossEntropyLoss()
     dice_loss = DiceLoss(num_classes + 1)
@@ -248,10 +279,24 @@ def main():
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=b_lr, betas=(0.9, 0.999), weight_decay=0.1)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min',verbose=True)
 
+    # prepare with accelerator
+    model, optimizer, trainloader, valloader, scheduler = accelerator.prepare(
+            model, optimizer, trainloader, valloader, scheduler
+        )
+    
+    if accelerator.is_main_process:
+        run = os.path.split(__file__)[-1].split(".")[0]
+        accelerator.init_trackers(run) # add args to wandb
+
     # logging
-    writer = SummaryWriter(experiment_path / f'results/{fold_n}/logs')
-    logging.basicConfig(level = logging.INFO)
-    logging.info("{} iterations per epoch. {} max iterations ".format(len(trainloader), max_iterations))
+    logger.info("***** Running training *****")
+    logger.info("{} iterations per epoch. {} max iterations ".format(len(trainloader), max_iterations))
+    logging.info(f"The length of train set is: {len(db_train)}")
+    logger.info(f"  Num batches each epoch = {len(trainloader)}")
+    logger.info(f"  Num Epochs = {max_epoch}")
+    logger.info(f"  Instantaneous batch size per device = {batch_size}")
+    global_step = 0
+    first_epoch = 0
 
     # init useful variables
     iterator = tqdm(range(max_epoch), ncols=70, desc="Training", unit="epoch")
@@ -266,60 +311,89 @@ def main():
         val_loss_dice = []
         val_dice_score=[]
         
-        for i_batch, sampled_batch in enumerate(trainloader):
-            # load batches
-            image_batch, label_batch = sampled_batch['image'], sampled_batch['label']  # [b, c, h, w], [b, h, w]
-            low_res_label_batch = sampled_batch['low_res_label'] # for logging
-            # send to device (gpu)
-            image_batch, label_batch = image_batch.to(device), label_batch.to(device)
-            low_res_label_batch = low_res_label_batch.to(device)
-            
-            assert image_batch.max() <= 3, f'image_batch max: {image_batch.max()}' #check the intensity range of the image
-            
-            # forward and loss computing
-            outputs = model(batched_input = image_batch, multimask_output = multimask_output, image_size = 256)
-            loss, loss_ce, loss_dice = calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, 0.8)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+        for _, sampled_batch in enumerate(trainloader):
 
+            with accelerator.accumulate(model):
+            
+                # load batches
+                image_batch, label_batch = sampled_batch['image'], sampled_batch['label']  # [b, c, h, w], [b, h, w] # label used only for showing in the log
+                low_res_label_batch = sampled_batch['low_res_label'] # for logging
 
-            if warmup and iter_num < warmup_period: # if in warmup period, adjust learning rate
-                lr_ = base_lr * ((iter_num + 1) / warmup_period)
-                for param_group in optimizer.param_groups:
-                    param_group['lr'] = lr_
-            else: # if not in warmup period, adjust learning rate
-                if warmup:
-                    shift_iter = iter_num - warmup_period
-                    assert shift_iter >= 0, f'Shift iter is {shift_iter}, smaller than zero'
-                else: # if not warm up at all, leave the shift as the iter number
-                    shift_iter = iter_num
-                lr_ = base_lr * (1.0 - shift_iter / max_iterations) ** 0.9  # learning rate adjustment depends on the max iterations
-                for param_group in optimizer.param_groups:
-                    param_group['lr'] = lr_
+                assert image_batch.max() <= 3, f'image_batch max: {image_batch.max()}' #check the intensity range of the image
+                
+                # forward and loss computing
+                outputs = model(batched_input = image_batch, multimask_output = multimask_output, image_size = 256)
+                loss, loss_ce, loss_dice = calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, 0.8)
+                accelerator.backward(loss)
+                optimizer.step()
+                if warmup and iter_num < warmup_period: # if in warmup period, adjust learning rate
+                    lr_ = base_lr * ((iter_num + 1) / warmup_period)
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = lr_
+                else: # if not in warmup period, adjust learning rate
+                    if warmup:
+                        shift_iter = iter_num - warmup_period
+                        assert shift_iter >= 0, f'Shift iter is {shift_iter}, smaller than zero'
+                    else: # if not warm up at all, leave the shift as the iter number
+                        shift_iter = iter_num
+                    lr_ = base_lr * (1.0 - shift_iter / max_iterations) ** 0.9  # learning rate adjustment depends on the max iterations
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = lr_
+
+                optimizer.zero_grad()
+
+            if accelerator.sync_gradients:
+                # progress_bar.update(1)
+                # update the iter number
+                iter_num += 1 
 
             # logging
-            writer.add_scalar('info/lr', lr_, iter_num) # log the learning rate
+            logs = {"loss": loss.detach().item(), "loss_ce": loss_ce.detach().item(), "loss_dice": loss_dice.detach().item(), "lr": lr_} # or lr_
+            iterator.set_postfix(**logs)
+            accelerator.log(logs, step=iter_num)
             # append lists
             train_loss_ce.append(loss_ce.detach().cpu().numpy())
             train_loss_dice.append(loss_dice.detach().cpu().numpy())
             # show to user
-            logging.info(f'iteration {iter_num} : loss : {loss.item()}, loss_ce: {loss_ce.item()}, loss_dice: {loss_dice.item()} ,lr:{optimizer.param_groups[0]["lr"]}')
-            # update the iter number
-            iter_num += 1 
+            # logging.info(f'iteration {iter_num} : loss : {loss.item()}, loss_ce: {loss_ce.item()}, loss_dice: {loss_dice.item()} ,lr:{optimizer.param_groups[0]["lr"]}')
+            
+            if iter_num % 20 == 0:
+                # image
+                image = image_batch[1, 0:1, :, :].cpu().numpy()
+                image = (image - image.min()) / (image.max() - image.min())
+                # prediction
+                output_masks = outputs['masks'].detach().cpu()
+                output_masks = torch.argmax(torch.softmax(output_masks, dim=1), dim=1, keepdim=True)
+                # ground truth
+                labs = label_batch[1, ...].unsqueeze(0) * 50
+                labs = labs.cpu().numpy()
+                # logging
+                for tracker in accelerator.trackers:
+                    if tracker.name == "wandb":
+                        tracker.log(
+                            {
+                                "training_example": [
+                                    wandb.Image(image, caption="image"),
+                                    wandb.Image(output_masks[1, ...] * 50, caption="prediction"),
+                                    wandb.Image(labs, caption="ground truth"),
+                                ]
+                            }
+                        )
+  
 
         # train logging after each epoch
         train_loss_ce_mean = np.mean(train_loss_ce)
         train_loss_dice_mean = np.mean(train_loss_dice)
-        writer.add_scalar('info/total_loss', train_loss_ce_mean+train_loss_dice_mean, iter_num)
-        writer.add_scalar('info/loss_ce', train_loss_ce_mean, iter_num)
-        writer.add_scalar('info/loss_dice', train_loss_dice_mean, iter_num)
+        logs_epoch = {'total_loss': train_loss_ce_mean+train_loss_dice_mean, 'loss_ce': train_loss_ce_mean, 'loss_dice': train_loss_dice_mean}
+        accelerator.log(logs_epoch, step=iter_num)
+
+
         
         # validation after each epoch
         model.eval()
         for i_batch, sampled_batch in enumerate(valloader):
-            image_batch, label_batch = sampled_batch["image"].to(device), sampled_batch["label"].to(device)
-            low_res_label_batch = sampled_batch['low_res_label'].to(device)
+            image_batch, label_batch = sampled_batch["image"], sampled_batch["label"]
+            low_res_label_batch = sampled_batch['low_res_label']
             
             assert image_batch.max() <= 3, f'image_batch max: {image_batch.max()}'
             
@@ -330,31 +404,39 @@ def main():
             val_loss_ce.append(loss_ce.detach().cpu().numpy())
             val_loss_dice.append(loss_dice.detach().cpu().numpy())
             
-            # at the very end of the epoch, for the last batch, show the images
-            # if i_batch % 100 == 0:            
-            #     fig,ax = plt.subplots(1,3,figsize=(12,6))
-            #     ax[0].imshow(sampled_batch['image'][0].cpu().numpy().transpose(1,2,0)) 
-            #     ax[0].set_title('image') 
-            #     ax[1].imshow(sampled_batch['label'][0]) 
-            #     ax[1].set_title('label')
-            #     output_masks = outputs['masks']
-            #     output_masks = torch.argmax(torch.softmax(output_masks, dim=1), dim=1, keepdim=True)
-
-            #     ax[2].imshow(output_masks[0].cpu()[0]) 
-            #     ax[2].set_title('prediction') 
-            #     plt.show()
-            #     plt.close()
+            if i_batch % 20 == 0:
+                # image
+                image = image_batch[1, 0:1, :, :].cpu().numpy()
+                image = (image - image.min()) / (image.max() - image.min())
+                # prediction
+                output_masks = outputs['masks'].detach().cpu()
+                output_masks = torch.argmax(torch.softmax(output_masks, dim=1), dim=1, keepdim=True)
+                # ground truth
+                labs = label_batch[1, ...].unsqueeze(0) * 50
+                labs = labs.cpu().numpy()
+                # logging
+                for tracker in accelerator.trackers:
+                    if tracker.name == "wandb":
+                        tracker.log(
+                            {
+                                "validation_example": [
+                                    wandb.Image(image, caption="image"),
+                                    wandb.Image(output_masks[1, ...] * 50, caption="prediction"),
+                                    wandb.Image(labs, caption="ground truth"),
+                                ]
+                            }
+                        )
 
 
         # validation logging after each epoch
         val_loss_ce_mean = np.mean(val_loss_ce)
         val_loss_dice_mean = np.mean(val_loss_dice)
-        writer.add_scalar('info/val_total_loss', val_loss_ce_mean+val_loss_dice_mean, iter_num)
-        writer.add_scalar('info/val_loss_ce', val_loss_ce_mean, iter_num)
-        writer.add_scalar('info/val_loss_dice', val_loss_dice_mean, iter_num)
+
+        logs_epoch = {'val_total_loss': val_loss_ce_mean+val_loss_dice_mean, 'val_loss_ce': val_loss_ce_mean, 'val_loss_dice': val_loss_dice_mean}
+        accelerator.log(logs_epoch, step=iter_num)
         # show to user
-        logging.info('epoch %d : val loss : %f, val loss_ce: %f, val loss_dice: %f' % (epoch_num, val_loss_ce_mean+val_loss_dice_mean,
-                                                                            val_loss_ce_mean, val_loss_dice_mean))
+        # logging.info('epoch %d : val loss : %f, val loss_ce: %f, val loss_dice: %f' % (epoch_num, val_loss_ce_mean+val_loss_dice_mean,
+                                                                            # val_loss_ce_mean, val_loss_dice_mean))
 
         # update learning rate
         scheduler.step(val_loss_ce_mean+val_loss_dice_mean)
@@ -378,8 +460,7 @@ def main():
             logging.info("save model to {}".format(save_mode_path))
             iterator.close()
         model.train()
-        
-    writer.close()
+    accelerator.wait_for_everyone()
 
 if __name__ == '__main__':
     main()
