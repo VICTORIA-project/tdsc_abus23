@@ -290,16 +290,18 @@ def main():
 
     # logging
     logger.info("***** Running training *****")
-    logger.info("{} iterations per epoch. {} max iterations ".format(len(trainloader), max_iterations))
-    logging.info(f"The length of train set is: {len(db_train)}")
-    logger.info(f"  Num batches each epoch = {len(trainloader)}")
-    logger.info(f"  Num Epochs = {max_epoch}")
-    logger.info(f"  Instantaneous batch size per device = {batch_size}")
+    logger.info(f"Max number of iterations {max_iterations}")
+    logger.info(f"The length of train set is: {len(db_train)}")
+    logger.info(f"The length of val set is: {len(db_val)}")
+    logger.info(f"Num batches each epoch = {len(trainloader)}")
+    logger.info(f'Number of batches for validation: {len(valloader)}')
+    logger.info(f"Num Epochs = {max_epoch}")
+    logger.info(f"Instantaneous batch size per device = {batch_size}")
     global_step = 0
     first_epoch = 0
 
     # init useful variables
-    iterator = tqdm(range(max_epoch), ncols=70, desc="Training", unit="epoch")
+    iterator = tqdm(range(max_epoch), desc="Training", unit="epoch")
     iter_num = 0
     best_performance = 100100
 
@@ -309,11 +311,10 @@ def main():
         train_loss_dice = []
         val_loss_ce = []
         val_loss_dice = []
-        val_dice_score=[]
         
         for _, sampled_batch in enumerate(trainloader):
 
-            with accelerator.accumulate(model):
+            with accelerator.accumulate(model): # forward and loss computing
             
                 # load batches
                 image_batch, label_batch = sampled_batch['image'], sampled_batch['label']  # [b, c, h, w], [b, h, w] # label used only for showing in the log
@@ -342,7 +343,7 @@ def main():
 
                 optimizer.zero_grad()
 
-            if accelerator.sync_gradients:
+            if accelerator.sync_gradients: # update iter number
                 # progress_bar.update(1)
                 # update the iter number
                 iter_num += 1 
@@ -350,14 +351,14 @@ def main():
             # logging
             logs = {"loss": loss.detach().item(), "loss_ce": loss_ce.detach().item(), "loss_dice": loss_dice.detach().item(), "lr": lr_} # or lr_
             iterator.set_postfix(**logs)
-            accelerator.log(logs, step=iter_num)
+            accelerator.log(values=logs, step=iter_num)
             # append lists
             train_loss_ce.append(loss_ce.detach().cpu().numpy())
             train_loss_dice.append(loss_dice.detach().cpu().numpy())
             # show to user
             # logging.info(f'iteration {iter_num} : loss : {loss.item()}, loss_ce: {loss_ce.item()}, loss_dice: {loss_dice.item()} ,lr:{optimizer.param_groups[0]["lr"]}')
             
-            if iter_num % 20 == 0:
+            if iter_num % 20 == 0: # log training examples every 20 iterations
                 # image
                 image = image_batch[1, 0:1, :, :].cpu().numpy()
                 image = (image - image.min()) / (image.max() - image.min())
@@ -367,25 +368,25 @@ def main():
                 # ground truth
                 labs = label_batch[1, ...].unsqueeze(0) * 50
                 labs = labs.cpu().numpy()
-                # logging
-                for tracker in accelerator.trackers:
-                    if tracker.name == "wandb":
-                        tracker.log(
-                            {
-                                "training_example": [
-                                    wandb.Image(image, caption="image"),
-                                    wandb.Image(output_masks[1, ...] * 50, caption="prediction"),
-                                    wandb.Image(labs, caption="ground truth"),
-                                ]
-                            }
-                        )
+                
+                # logging images    
+                accelerator.log(
+                    {
+                        "training_example": [
+                            wandb.Image(image, caption="image"),
+                            wandb.Image(output_masks[1, ...] * 50, caption="prediction"),
+                            wandb.Image(labs, caption="ground truth"),
+                        ]
+                    },
+                    step=iter_num,
+                )
   
 
         # train logging after each epoch
         train_loss_ce_mean = np.mean(train_loss_ce)
         train_loss_dice_mean = np.mean(train_loss_dice)
-        logs_epoch = {'total_loss': train_loss_ce_mean+train_loss_dice_mean, 'loss_ce': train_loss_ce_mean, 'loss_dice': train_loss_dice_mean}
-        accelerator.log(logs_epoch, step=iter_num)
+        logs_epoch = {"mean-train_loss": train_loss_ce_mean+train_loss_dice_mean, "mean-train_loss_ce": train_loss_ce_mean, "mean-train_loss_dice": train_loss_dice_mean}
+        accelerator.log(values=logs_epoch, step=iter_num)
 
 
         
@@ -404,7 +405,7 @@ def main():
             val_loss_ce.append(loss_ce.detach().cpu().numpy())
             val_loss_dice.append(loss_dice.detach().cpu().numpy())
             
-            if i_batch % 20 == 0:
+            if i_batch % (len(valloader)-1) == 0:
                 # image
                 image = image_batch[1, 0:1, :, :].cpu().numpy()
                 image = (image - image.min()) / (image.max() - image.min())
@@ -415,19 +416,16 @@ def main():
                 labs = label_batch[1, ...].unsqueeze(0) * 50
                 labs = labs.cpu().numpy()
                 # logging
-                for tracker in accelerator.trackers:
-                    if tracker.name == "wandb":
-                        tracker.log(
-                            {
-                                "validation_example": [
-                                    wandb.Image(image, caption="image"),
-                                    wandb.Image(output_masks[1, ...] * 50, caption="prediction"),
-                                    wandb.Image(labs, caption="ground truth"),
-                                ]
-                            }
-                        )
-
-
+                accelerator.log(
+                    {
+                        "validation_example": [
+                            wandb.Image(image, caption="image"),
+                            wandb.Image(output_masks[1, ...] * 50, caption="prediction"),
+                            wandb.Image(labs, caption="ground truth"),
+                        ]
+                    },
+                    step=iter_num,
+                )
         # validation logging after each epoch
         val_loss_ce_mean = np.mean(val_loss_ce)
         val_loss_dice_mean = np.mean(val_loss_dice)
@@ -442,14 +440,14 @@ def main():
         scheduler.step(val_loss_ce_mean+val_loss_dice_mean)
         
         # saving model
-        if val_loss_dice_mean < best_performance: # if dice is better, save model
+        if val_loss_dice_mean < best_performance: # if val dice is better, save model
             best_performance=val_loss_dice_mean
             save_mode_path = os.path.join(lora_weights, 'epoch_' + str(epoch_num) + '.pth')
             try:
                 model.save_lora_parameters(save_mode_path)
             except:
                 model.module.save_lora_parameters(save_mode_path)
-            logging.info("save model to {}".format(save_mode_path))
+            logger.info(f"\nSaving model to {save_mode_path}")
 
         if epoch_num >= max_epoch - 1: # save model at the last epoch
             save_mode_path = os.path.join(lora_weights, 'epoch_' + str(epoch_num) + '.pth')
@@ -457,7 +455,7 @@ def main():
                 model.save_lora_parameters(save_mode_path)
             except:
                 model.module.save_lora_parameters(save_mode_path)
-            logging.info("save model to {}".format(save_mode_path))
+            logger.info(f"\nSave last epoch model to {save_mode_path}")
             iterator.close()
         model.train()
     accelerator.wait_for_everyone()
