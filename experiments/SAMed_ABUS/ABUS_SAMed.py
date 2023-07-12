@@ -21,19 +21,17 @@ from accelerate import Accelerator
 from accelerate.logging import get_logger
 
 import torch
-from torch.utils.data import DataLoader
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 import torch.optim as optim
 from torch.nn.modules.loss import CrossEntropyLoss
 import logging
 from tqdm import tqdm
 from importlib import import_module
 import wandb
-
+from sklearn.metrics import jaccard_score
 # from scipy.ndimage import zoom
 # from einops import repeat
 # from icecream import ic
-# from sklearn.metrics import jaccard_score
 # from PIL import Image
 
 from monai.transforms import (
@@ -110,10 +108,17 @@ def calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, dice_weight:floa
     loss = (1 - dice_weight) * loss_ce + dice_weight * loss_dice
     return loss, loss_ce, loss_dice
 
+# def compute_dice(outputs, low_res_label_batch):
+#     "compute using jaccaard score"
+#     low_res_logits = outputs['low_res_logits']
+
+
+
 logger = get_logger(__name__)
 
 def main():
 
+    exp_name = 'vanilla3'
     ### make the split and get files list
     # we make a split of our 100 ids
     kf = KFold(n_splits=5,shuffle=True,random_state=0)
@@ -222,8 +227,7 @@ def main():
     warmup_period=1000
 
 
-    
-
+    # dataset
     path_images = (root_path / "image_mha")
     path_labels = (root_path / "label_mha")
     # get all files in the folder in a list, only mha files
@@ -249,7 +253,8 @@ def main():
     valloader = DataLoader(db_val, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
 
     # the lora parameters folder is created to save the weights
-    lora_weights = experiment_path / f'weights/fold{fold_n}'
+    # lora_weights = experiment_path / f'weights/fold{fold_n}'
+    lora_weights = experiment_path / f'weights/{exp_name}'
     os.makedirs(lora_weights,exist_ok=True)
 
     # get SAM model
@@ -385,7 +390,7 @@ def main():
         # train logging after each epoch
         train_loss_ce_mean = np.mean(train_loss_ce)
         train_loss_dice_mean = np.mean(train_loss_dice)
-        logs_epoch = {"mean-train_loss": train_loss_ce_mean+train_loss_dice_mean, "mean-train_loss_ce": train_loss_ce_mean, "mean-train_loss_dice": train_loss_dice_mean}
+        logs_epoch = {"train_total_loss": train_loss_ce_mean+train_loss_dice_mean, "train_loss_ce": train_loss_ce_mean, "train_loss_dice": train_loss_dice_mean}
         accelerator.log(values=logs_epoch, step=iter_num)
 
 
