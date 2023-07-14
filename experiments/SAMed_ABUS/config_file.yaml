@@ -1,5 +1,5 @@
 # settings:
-run_name: vanilla
+run_name: vanilla_1class
 data_path: data/challange_2023/with_lesion
 report_to: wandb
 
@@ -10,7 +10,7 @@ split_seed: 0
 
 # training
 base_lr: 0.001
-num_classes: 2
+num_classes: 1
 train_batch_size: 16
 max_epoch: 100
 val_batch_size: 32

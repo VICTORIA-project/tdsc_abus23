@@ -398,7 +398,7 @@ def main():
                 image = (image - image.min()) / (image.max() - image.min())
                 # prediction
                 output_masks = outputs['masks'].detach().cpu()
-                output_masks = torch.argmax(torch.softmax(output_masks, dim=1), dim=1, keepdim=True)
+                output_masks = torch.argmax(torch.softmax(output_masks, dim=1), dim=1, keepdim=True) # we take the max prob per pixel
                 # ground truth
                 labs = label_batch[1, ...].unsqueeze(0) * 50
                 labs = labs.cpu().numpy()
