@@ -14,6 +14,8 @@ os.environ["CUDA_VISIBLE_DEVICES"]="0"
 from sklearn.model_selection import KFold
 import SimpleITK
 import numpy as np
+import argparse
+import yaml
 
 # accelerate
 from accelerate.utils import ProjectConfiguration, set_seed
@@ -35,11 +37,7 @@ from sklearn.metrics import jaccard_score
 # from PIL import Image
 
 from monai.transforms import (
-    Activations,
-    AddChanneld, # depricaded, use intead EnsureChannelFirstd(keys=['label'], channel_dim='no_channel')
-    AsDiscrete,
     Compose,
-    LoadImaged,
     RandFlipd,
     RandRotated,
     RandZoomd,
@@ -52,10 +50,6 @@ from monai.transforms import (
     Rand2DElasticd,
     RandAffined,
     OneOf,
-    NormalizeIntensity,
-    AsChannelFirstd,
-    EnsureType,
-    LabelToMaskd
 )
 
 # extra imports
@@ -108,35 +102,35 @@ def calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, dice_weight:floa
     loss = (1 - dice_weight) * loss_ce + dice_weight * loss_dice
     return loss, loss_ce, loss_dice
 
-# def compute_dice(outputs, low_res_label_batch):
-#     "compute using jaccaard score"
-#     low_res_logits = outputs['low_res_logits']
-
-
-
 logger = get_logger(__name__)
 
 def main():
-
-    exp_name = 'vanilla3'
-    ### make the split and get files list
-    # we make a split of our 100 ids
-    kf = KFold(n_splits=5,shuffle=True,random_state=0)
+    # read and set config file
+    config_path = 'config_file.yaml' # configuration file path (beter to call it from the args parser)
+    with open(config_path) as file: # expects the config file to be in the same directory
+        config = yaml.load(file, Loader=yaml.FullLoader)
+    args = argparse.Namespace(**config) # parse the config fil
+    run_name = args.run_name
+    
+    ### make the split and get files list. We make a split of our 100 patient ids
+    kf = KFold(n_splits=args.num_folds,shuffle=args.split_shuffle,random_state=args.split_seed)
     for fold_n, (train_ids, val_ids) in enumerate(kf.split(range(100))):
         break
 
     # paths
-    experiment_path = repo_path / 'experiments/SAMed_ABUS'
-    checkpoint_dir = repo_path / 'checkpoints'
-    logging_dir = experiment_path / f'results/fold{fold_n}/logs' # path for logging
-    root_path = repo_path / 'data/challange_2023/with_lesion'
+    experiment_path = Path.cwd().resolve() # where the script is running
+    data_path = repo_path / args.data_path # path to data
+    checkpoint_dir = repo_path / 'checkpoints' # SAMed checkpoints
+    logging_dir = experiment_path / f'results/{run_name}/fold{fold_n}/logs' # path for logging
+    lora_weights = experiment_path / f'results/{run_name}/fold{fold_n}/weights' # the lora parameters folder is created to save the weights
+    os.makedirs(lora_weights,exist_ok=True)
 
     # accelerator
     accelerator_project_config = ProjectConfiguration()
     accelerator = Accelerator( # start accelerator
-        gradient_accumulation_steps=1,
-        mixed_precision="fp16", 
-        log_with='wandb', # logger (tb or wandb)
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        mixed_precision=args.mixed_precision,
+        log_with=args.report_to, # logger (wandb or tensorboard)
         logging_dir=logging_dir, # defined above
         project_config=accelerator_project_config, # project config defined above
     )
@@ -149,9 +143,9 @@ def main():
 
     logger.info(accelerator.state, main_process_only=False)
     # training seed
-    set_seed(42)
-
-
+    if args.training_seed is not None:
+        set_seed(args.training_seed) # accelerate seed
+        logger.info(f"Set seed {args.training_seed} for training.")
     # Transforms
     deform = Rand2DElasticd(
         keys=["image", "label"],
@@ -212,24 +206,12 @@ def main():
             EnsureTyped(keys=["image"])
         ])
 
-    # define paths, get list of images and labels and split them into train and test
-
-
     # HP
-    base_lr = 0.001
-    num_classes = 2
-    batch_size = 16
-    multimask_output = True
-    warmup=False
-    max_epoch = 100
-    save_interval = 5
-    iter_num = 0
-    warmup_period=1000
-
+    #save_interval = 5
 
     # dataset
-    path_images = (root_path / "image_mha")
-    path_labels = (root_path / "label_mha")
+    path_images = (data_path / "image_mha")
+    path_labels = (data_path / "label_mha")
     # get all files in the folder in a list, only mha files
     image_files = sorted([file for file in os.listdir(path_images) if file.endswith('.mha')])
     # now, we will check if the path has at least one of the ids in the train_ids list
@@ -249,17 +231,14 @@ def main():
     db_val = ABUS_dataset(transform=val_transform,list_dir=list_val)   
 
     # define dataloaders
-    trainloader = DataLoader(db_train, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
-    valloader = DataLoader(db_val, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
+    trainloader = DataLoader(db_train, batch_size=args.train_batch_size, shuffle=True, num_workers=8, pin_memory=True)
+    valloader = DataLoader(db_val, batch_size=args.val_batch_size, shuffle=True, num_workers=8, pin_memory=True)
 
-    # the lora parameters folder is created to save the weights
-    # lora_weights = experiment_path / f'weights/fold{fold_n}'
-    lora_weights = experiment_path / f'weights/{exp_name}'
-    os.makedirs(lora_weights,exist_ok=True)
+ 
 
     # get SAM model
     sam, _ = sam_model_registry['vit_b'](image_size=256,
-                                        num_classes=num_classes,
+                                        num_classes=args.num_classes,
                                         checkpoint=str(checkpoint_dir / 'sam_vit_b_01ec64.pth'),
                                         pixel_mean=[0, 0, 0],
                                         pixel_std=[1, 1, 1])
@@ -272,15 +251,15 @@ def main():
     
     # metrics
     ce_loss = CrossEntropyLoss()
-    dice_loss = DiceLoss(num_classes + 1)
+    dice_loss = DiceLoss(args.num_classes + 1)
     # max iterations
-    max_iterations = max_epoch * len(trainloader)  
+    max_iterations = args.max_epoch * len(trainloader)  
 
     # optimizer
-    if warmup:
-        b_lr = base_lr / warmup_period
+    if args.warmup:
+        b_lr = args.base_lr / args.warmup_period
     else:
-        b_lr = base_lr
+        b_lr = args.base_lr
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=b_lr, betas=(0.9, 0.999), weight_decay=0.1)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min',verbose=True)
 
@@ -289,9 +268,11 @@ def main():
             model, optimizer, trainloader, valloader, scheduler
         )
     
+    # Initialize trackers
     if accelerator.is_main_process:
         run = os.path.split(__file__)[-1].split(".")[0]
-        accelerator.init_trackers(run) # add args to wandb
+        accelerator.init_trackers(run, config=vars(args))
+        wandb.save(str(config_path)) if args.report_to=="wandb" else None
 
     # logging
     logger.info("***** Running training *****")
@@ -300,13 +281,13 @@ def main():
     logger.info(f"The length of val set is: {len(db_val)}")
     logger.info(f"Num batches each epoch = {len(trainloader)}")
     logger.info(f'Number of batches for validation: {len(valloader)}')
-    logger.info(f"Num Epochs = {max_epoch}")
-    logger.info(f"Instantaneous batch size per device = {batch_size}")
+    logger.info(f"Num Epochs = {args.max_epoch}")
+    logger.info(f"Instantaneous batch size per device = {args.train_batch_size}")
     global_step = 0
     first_epoch = 0
 
     # init useful variables
-    iterator = tqdm(range(max_epoch), desc="Training", unit="epoch")
+    iterator = tqdm(range(args.max_epoch), desc="Training", unit="epoch")
     iter_num = 0
     best_performance = 100100
 
@@ -328,21 +309,21 @@ def main():
                 assert image_batch.max() <= 3, f'image_batch max: {image_batch.max()}' #check the intensity range of the image
                 
                 # forward and loss computing
-                outputs = model(batched_input = image_batch, multimask_output = multimask_output, image_size = 256)
+                outputs = model(batched_input = image_batch, multimask_output = args.multimask_output, image_size = 256)
                 loss, loss_ce, loss_dice = calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, 0.8)
                 accelerator.backward(loss)
                 optimizer.step()
-                if warmup and iter_num < warmup_period: # if in warmup period, adjust learning rate
-                    lr_ = base_lr * ((iter_num + 1) / warmup_period)
+                if args.warmup and iter_num < args.warmup_period: # if in warmup period, adjust learning rate
+                    lr_ = args.base_lr * ((iter_num + 1) / args.warmup_period)
                     for param_group in optimizer.param_groups:
                         param_group['lr'] = lr_
                 else: # if not in warmup period, adjust learning rate
-                    if warmup:
-                        shift_iter = iter_num - warmup_period
+                    if args.warmup:
+                        shift_iter = iter_num - args.warmup_period
                         assert shift_iter >= 0, f'Shift iter is {shift_iter}, smaller than zero'
                     else: # if not warm up at all, leave the shift as the iter number
                         shift_iter = iter_num
-                    lr_ = base_lr * (1.0 - shift_iter / max_iterations) ** 0.9  # learning rate adjustment depends on the max iterations
+                    lr_ = args.base_lr * (1.0 - shift_iter / max_iterations) ** 0.9  # learning rate adjustment depends on the max iterations
                     for param_group in optimizer.param_groups:
                         param_group['lr'] = lr_
 
@@ -404,7 +385,7 @@ def main():
             assert image_batch.max() <= 3, f'image_batch max: {image_batch.max()}'
             
             # forward and losses computing
-            outputs = model(image_batch, multimask_output, 256)
+            outputs = model(image_batch, args.multimask_output, 256)
             loss, loss_ce, loss_dice = calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, 0.8)
             # append lists
             val_loss_ce.append(loss_ce.detach().cpu().numpy())
@@ -454,7 +435,7 @@ def main():
                 model.module.save_lora_parameters(save_mode_path)
             logger.info(f"\nSaving model to {save_mode_path}")
 
-        if epoch_num >= max_epoch - 1: # save model at the last epoch
+        if epoch_num >= args.max_epoch - 1: # save model at the last epoch
             save_mode_path = os.path.join(lora_weights, 'epoch_' + str(epoch_num) + '.pth')
             try:
                 model.save_lora_parameters(save_mode_path)
