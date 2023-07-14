@@ -298,7 +298,7 @@ def main():
         val_loss_ce = []
         val_loss_dice = []
         
-        for _, sampled_batch in enumerate(trainloader):
+        for sampled_batch in trainloader:
 
             with accelerator.accumulate(model): # forward and loss computing
             
@@ -377,6 +377,7 @@ def main():
 
         
         # validation after each epoch
+        #TODO meaning full validation?
         model.eval()
         for i_batch, sampled_batch in enumerate(valloader):
             image_batch, label_batch = sampled_batch["image"], sampled_batch["label"]
