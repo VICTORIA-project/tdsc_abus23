@@ -1,5 +1,5 @@
 # settings:
-run_name: vanilla_1class
+run_name: multifold_vanilla
 data_path: data/challange_2023/with_lesion
 report_to: wandb
 

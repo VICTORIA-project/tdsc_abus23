@@ -104,7 +104,7 @@ def calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, dice_weight:floa
 
 logger = get_logger(__name__)
 
-def main():
+def main(fold_n, train_ids, val_ids):
     # read and set config file
     config_path = 'config_file.yaml' # configuration file path (beter to call it from the args parser)
     with open(config_path) as file: # expects the config file to be in the same directory
@@ -112,10 +112,7 @@ def main():
     args = argparse.Namespace(**config) # parse the config fil
     run_name = args.run_name
     
-    ### make the split and get files list. We make a split of our 100 patient ids
-    kf = KFold(n_splits=args.num_folds,shuffle=args.split_shuffle,random_state=args.split_seed)
-    for fold_n, (train_ids, val_ids) in enumerate(kf.split(range(100))):
-        break
+           
 
     # paths
     experiment_path = Path.cwd().resolve() # where the script is running
@@ -195,6 +192,7 @@ def main():
             EnsureTyped(keys=["image"] ), # ensure it is a torch tensor or np array
         ]
     )
+    train_transform.set_random_state(seed=args.training_seed) # set the seed for the transforms
 
     val_transform = Compose(
         [
@@ -234,7 +232,7 @@ def main():
     trainloader = DataLoader(db_train, batch_size=args.train_batch_size, shuffle=True, num_workers=8, pin_memory=True)
     valloader = DataLoader(db_val, batch_size=args.val_batch_size, shuffle=True, num_workers=8, pin_memory=True)
 
- 
+
 
     # get SAM model
     sam, _ = sam_model_registry['vit_b'](image_size=256,
@@ -366,7 +364,7 @@ def main():
                     },
                     step=iter_num,
                 )
-  
+
 
         # train logging after each epoch
         train_loss_ce_mean = np.mean(train_loss_ce)
@@ -429,7 +427,7 @@ def main():
         # saving model
         if val_loss_dice_mean < best_performance: # if val dice is better, save model
             best_performance=val_loss_dice_mean
-            save_mode_path = os.path.join(lora_weights, 'epoch_' + str(epoch_num) + '.pth')
+            save_mode_path = os.path.join(lora_weights, f'epoch_{str(epoch_num)}.pth')
             try:
                 model.save_lora_parameters(save_mode_path)
             except:
@@ -437,7 +435,7 @@ def main():
             logger.info(f"\nSaving model to {save_mode_path}")
 
         if epoch_num >= args.max_epoch - 1: # save model at the last epoch
-            save_mode_path = os.path.join(lora_weights, 'epoch_' + str(epoch_num) + '.pth')
+            save_mode_path = os.path.join(lora_weights, f'epoch_{str(epoch_num)}.pth')
             try:
                 model.save_lora_parameters(save_mode_path)
             except:
@@ -446,6 +444,16 @@ def main():
             iterator.close()
         model.train()
     accelerator.wait_for_everyone()
+    accelerator.end_training()
 
 if __name__ == '__main__':
-    main()
+    # read and set config file
+    config_path = 'config_file.yaml' # configuration file path (beter to call it from the args parser)
+    with open(config_path) as file: # expects the config file to be in the same directory
+        config = yaml.load(file, Loader=yaml.FullLoader)
+    args = argparse.Namespace(**config) # parse the config fil
+    
+    ### make the split and get files list. We make a split of our 100 patient ids
+    kf = KFold(n_splits=args.num_folds,shuffle=args.split_shuffle,random_state=args.split_seed)
+    for fold_n, (train_ids, val_ids) in enumerate(kf.split(range(100))):
+        main(fold_n, train_ids, val_ids) 
