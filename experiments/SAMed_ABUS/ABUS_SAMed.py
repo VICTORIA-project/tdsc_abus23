@@ -110,9 +110,7 @@ def main(fold_n, train_ids, val_ids):
     with open(config_path) as file: # expects the config file to be in the same directory
         config = yaml.load(file, Loader=yaml.FullLoader)
     args = argparse.Namespace(**config) # parse the config fil
-    run_name = args.run_name
-    
-           
+    run_name = args.run_name   
 
     # paths
     experiment_path = Path.cwd().resolve() # where the script is running
@@ -204,9 +202,6 @@ def main(fold_n, train_ids, val_ids):
             EnsureTyped(keys=["image"])
         ])
 
-    # HP
-    #save_interval = 5
-
     # dataset
     path_images = (data_path / "image_mha")
     path_labels = (data_path / "label_mha")
@@ -232,8 +227,6 @@ def main(fold_n, train_ids, val_ids):
     trainloader = DataLoader(db_train, batch_size=args.train_batch_size, shuffle=True, num_workers=8, pin_memory=True)
     valloader = DataLoader(db_val, batch_size=args.val_batch_size, shuffle=True, num_workers=8, pin_memory=True)
 
-
-
     # get SAM model
     sam, _ = sam_model_registry['vit_b'](image_size=256,
                                         num_classes=args.num_classes,
@@ -242,8 +235,9 @@ def main(fold_n, train_ids, val_ids):
                                         pixel_std=[1, 1, 1])
     # load lora model
     pkg = import_module('sam_lora_image_encoder')
-    net = pkg.LoRA_Sam(sam, 4)
-    # net.load_lora_parameters(str(checkpoint_dir / 'epoch_159.pth' ))
+    net = pkg.LoRA_Sam(sam, 4) # lora rank is 4
+    if args.pretrained_path: # load pretrained weights
+        net.load_lora_parameters(str(repo_path / args.pretrained_path))
     model=net
     model.train()
     
@@ -281,8 +275,6 @@ def main(fold_n, train_ids, val_ids):
     logger.info(f'Number of batches for validation: {len(valloader)}')
     logger.info(f"Num Epochs = {args.max_epoch}")
     logger.info(f"Instantaneous batch size per device = {args.train_batch_size}")
-    global_step = 0
-    first_epoch = 0
 
     # init useful variables
     iterator = tqdm(range(args.max_epoch), desc="Training", unit="epoch")
