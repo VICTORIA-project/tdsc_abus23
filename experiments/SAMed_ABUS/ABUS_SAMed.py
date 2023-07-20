@@ -104,7 +104,15 @@ def calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, dice_weight:floa
 
 logger = get_logger(__name__)
 
-def main(fold_n, train_ids, val_ids):
+def main(fold_n:int, train_ids:list, val_ids:list):
+    """main function needs split fold number and train and val ids
+
+    Args:
+        fold_n (int): fold number
+        train_ids (list): list with train ids, ints
+        val_ids (list): list with val ids, ints
+    """
+
     # read and set config file
     config_path = 'config_file.yaml' # configuration file path (beter to call it from the args parser)
     with open(config_path) as file: # expects the config file to be in the same directory
@@ -288,6 +296,7 @@ def main(fold_n, train_ids, val_ids):
         val_loss_ce = []
         val_loss_dice = []
         
+        # training time
         for sampled_batch in trainloader:
 
             with accelerator.accumulate(model): # forward and loss computing
@@ -357,17 +366,13 @@ def main(fold_n, train_ids, val_ids):
                     step=iter_num,
                 )
 
-
         # train logging after each epoch
         train_loss_ce_mean = np.mean(train_loss_ce)
         train_loss_dice_mean = np.mean(train_loss_dice)
         logs_epoch = {"train_total_loss": train_loss_ce_mean+train_loss_dice_mean, "train_loss_ce": train_loss_ce_mean, "train_loss_dice": train_loss_dice_mean}
         accelerator.log(values=logs_epoch, step=iter_num)
-
-
         
-        # validation after each epoch
-        #TODO meaning full validation?
+        # validation time
         model.eval()
         for i_batch, sampled_batch in enumerate(valloader):
             image_batch, label_batch = sampled_batch["image"], sampled_batch["label"]
@@ -409,9 +414,6 @@ def main(fold_n, train_ids, val_ids):
 
         logs_epoch = {'val_total_loss': val_loss_ce_mean+val_loss_dice_mean, 'val_loss_ce': val_loss_ce_mean, 'val_loss_dice': val_loss_dice_mean}
         accelerator.log(logs_epoch, step=iter_num)
-        # show to user
-        # logging.info('epoch %d : val loss : %f, val loss_ce: %f, val loss_dice: %f' % (epoch_num, val_loss_ce_mean+val_loss_dice_mean,
-                                                                            # val_loss_ce_mean, val_loss_dice_mean))
 
         # update learning rate
         scheduler.step(val_loss_ce_mean+val_loss_dice_mean)

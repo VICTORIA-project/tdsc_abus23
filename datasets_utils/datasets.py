@@ -19,7 +19,7 @@ class ABUS_dataset(Dataset):
         images = [sitk.GetArrayFromImage(sitk.ReadImage(str(i))) for i in list_dir[0]]
         labels = [sitk.GetArrayFromImage(sitk.ReadImage(str(i))) for i in list_dir[1]]
 
-        self.sample_list = np.array(list(zip(images,labels)))
+        self.sample_list = np.array(list(zip(images,labels)), dtype=object) # more efficient?
         
         self.resize=Compose([Resized(keys=["label"], spatial_size=(64, 64),mode=['nearest'])])
 
