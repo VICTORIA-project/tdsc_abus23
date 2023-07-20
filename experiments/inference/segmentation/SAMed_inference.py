@@ -67,8 +67,7 @@ def main():
             ])
 
     # HP
-    batch_size = 1
-    multimask_output = True
+    batch_size = 16
 
     patients_jaccard = np.zeros((len(val_ids), 2))
     patients_dice = np.zeros((len(val_ids), 2))
@@ -93,25 +92,27 @@ def main():
         valloader = DataLoader(db_val, batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True)
         print(f'The patient id is {pat_id[0]}')
         print(f'The number of slices is {len(db_val)}')
-        labels_array = np.zeros((len(db_val), 256, 256))
-        preds_array = np.zeros((len(db_val), 256, 256))
-        for batch_num, sample_batch in tqdm(enumerate(valloader)):
+        labels_array = []
+        preds_array = []
+        for sample_batch in valloader:
             # get data
             image_batch, label_batch = sample_batch["image"].to(device), sample_batch["label"].to(device)
             # forward and losses computing
-            outputs = model(image_batch, multimask_output, 256)
+            outputs = model(image_batch, True, 256)
             output_masks = outputs['masks'].detach().cpu()
-            output_masks = torch.argmax(torch.softmax(output_masks, dim=1), dim=1, keepdim=True)
+            output_masks = torch.argmax(torch.softmax(output_masks, dim=1), dim=1, keepdim=False)
 
             #label_batch and output_masks in array
-            image_batch = image_batch[0, 0, :, :].cpu().numpy()
-            label_batch = label_batch[0, :, :].cpu().numpy()
-            output_masks = output_masks[0, 0, :, :].numpy()
-            # save in array
-            labels_array[batch_num, :, :] = label_batch
-            preds_array[batch_num, :, :] = output_masks
-        
+            image_batch = image_batch[:,0].cpu().numpy()
+            label_batch = label_batch.cpu().numpy()
+            output_masks = output_masks.cpu().numpy()
+            # append to list
+            labels_array.append(label_batch)
+            preds_array.append(output_masks)
+            
         # get 3D jaccard score
+        labels_array = np.concatenate(labels_array)
+        preds_array = np.concatenate(preds_array)
         jaccard_value = jaccard_score(labels_array.flatten(), preds_array.flatten())
         # dice from jaccard
         dice_value = 2*jaccard_value/(1+jaccard_value)
