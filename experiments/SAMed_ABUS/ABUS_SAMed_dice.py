@@ -9,6 +9,7 @@ sys.path.insert(0,str(repo_path)) if str(repo_path) not in sys.path else None
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
+device = 0 # for dice special
 
 # Libraries
 from sklearn.model_selection import KFold
@@ -53,6 +54,7 @@ from monai.transforms import (
 )
 
 # extra imports
+from datasets_utils.datasets import ABUS_dataset
 sys.path.append(str(repo_path / 'SAMed'))
 from SAMed.segment_anything import sam_model_registry
 from SAMed.utils import DiceLoss #, Focal_loss
@@ -60,29 +62,7 @@ from SAMed.utils import DiceLoss #, Focal_loss
 # from SAMed.segment_anything import build_sam, SamPredictor
 # from SAMed.segment_anything.modeling import Sam
 
-class ABUS_dataset(Dataset):
-    
-    def __init__(self, list_dir, transform=None):
-        self.transform = transform  # using transform in torch!
-        images = [SimpleITK.GetArrayFromImage(SimpleITK.ReadImage(str(i))) for i in list_dir[0]]
-        labels = [SimpleITK.GetArrayFromImage(SimpleITK.ReadImage(str(i))) for i in list_dir[1]]
 
-        self.sample_list = np.array(list(zip(images,labels)))
-        
-        self.resize=Compose([Resized(keys=["label"], spatial_size=(64, 64),mode=['nearest'])])
-
-    def __len__(self):
-        return len(self.sample_list)
-
-    def __getitem__(self, idx):
-        
-        if self.transform:
-            sample=self.transform({"image": self.sample_list[idx][0], "label": self.sample_list[idx][1]})
-        
-        sample['low_res_label']=self.resize({"label":sample['label']})['label'][0]
-        sample['label']=sample['label'][0]
-        return sample
-    
 def calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, dice_weight:float=0.8):
     """Compute the loss of the network using a linear combination of cross entropy and dice loss.
 
@@ -418,6 +398,61 @@ def main(fold_n:int, train_ids:list, val_ids:list):
         # update learning rate
         scheduler.step(val_loss_ce_mean+val_loss_dice_mean)
         
+
+        patients_jaccard = np.zeros((len(val_ids), 2))
+        patients_dice = np.zeros((len(val_ids), 2))
+        for pat_num in range(len(val_ids)):
+            pat_id = [val_ids[pat_num]]
+            # get data
+            root_path = repo_path / 'data/challange_2023/with_lesion'
+            path_images = (root_path / "image_mha")
+            path_labels = (root_path / "label_mha")
+            # get all files in the folder in a list, only mha files
+            image_files = sorted([file for file in os.listdir(path_images) if file.endswith('.mha')])
+            # now, we will check if the path has at least one of the ids in the train_ids list
+            val_files = [file for file in image_files if any(f'id_{id}_' in file for id in pat_id)]
+            # create final paths
+            image_files = np.array([path_images / i for i in val_files])
+            label_files = np.array([path_labels / i for i in val_files])
+            list_val = [image_files, label_files] # this is what we will pass to the dataset <-
+            # define dataset and dataloader
+            db_val_dice = ABUS_dataset(transform=val_transform,list_dir=list_val)   
+            valloader_dice = DataLoader(db_val_dice, batch_size=args.val_batch_size, shuffle=False, num_workers=8, pin_memory=True)
+
+            labels_array = []
+            preds_array = []
+            for sample_batch in valloader_dice:
+                # get data
+                image_batch, label_batch = sample_batch["image"].to(device), sample_batch["label"].to(device)
+                # forward and losses computing
+                outputs = model(image_batch, True, 256)
+                output_masks = outputs['masks'].detach().cpu()
+                output_masks = torch.argmax(torch.softmax(output_masks, dim=1), dim=1, keepdim=False)
+
+                #label_batch and output_masks in array
+                image_batch = image_batch[:,0].cpu().numpy()
+                label_batch = label_batch.cpu().numpy()
+                output_masks = output_masks.cpu().numpy()
+                # append to list
+                labels_array.append(label_batch)
+                preds_array.append(output_masks)
+                
+            # get 3D jaccard score
+            labels_array = np.concatenate(labels_array)
+            preds_array = np.concatenate(preds_array)
+            jaccard_value = jaccard_score(labels_array.flatten(), preds_array.flatten())
+            # dice from jaccard
+            dice_value = 2*jaccard_value/(1+jaccard_value)
+            # store in array
+            patients_jaccard[pat_num, 0] = pat_id[0]
+            patients_jaccard[pat_num, 1] = jaccard_value
+            patients_dice[pat_num, 0] = pat_id[0]
+            patients_dice[pat_num, 1] = dice_value
+        # compute mean dice
+        mean_dice = np.mean(patients_dice[:, 1])
+        accelerator.log({'mean_dice': mean_dice}, step=iter_num)
+
+
         # saving model
         if val_loss_dice_mean < best_performance: # if val dice is better, save model
             best_performance=val_loss_dice_mean
