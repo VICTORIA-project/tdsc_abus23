@@ -1,7 +1,8 @@
 # settings:
-run_name: pretrained_weights
-data_path: data/challange_2023/with_lesion
-pretrained_path: checkpoints/epoch_159.pth
+run_name: all_slices-scratch_c1
+
+data_path: data/challange_2023/all_slices
+pretrained_path: null
 report_to: wandb
 
 # split
@@ -11,10 +12,10 @@ split_seed: 0
 
 # training
 base_lr: 0.001
-num_classes: 8
+num_classes: 1
 train_batch_size: 16
 max_epoch: 100
-val_batch_size: 16
+val_batch_size: 24
 multimask_output: true
 warmup: false
 warmup_period: 1000

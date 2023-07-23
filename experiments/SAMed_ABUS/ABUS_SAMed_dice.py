@@ -13,7 +13,6 @@ device = 0 # for dice special
 
 # Libraries
 from sklearn.model_selection import KFold
-import SimpleITK
 import numpy as np
 import argparse
 import yaml
@@ -24,7 +23,7 @@ from accelerate import Accelerator
 from accelerate.logging import get_logger
 
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 import torch.optim as optim
 from torch.nn.modules.loss import CrossEntropyLoss
 import logging
@@ -323,7 +322,7 @@ def main(fold_n:int, train_ids:list, val_ids:list):
             # show to user
             # logging.info(f'iteration {iter_num} : loss : {loss.item()}, loss_ce: {loss_ce.item()}, loss_dice: {loss_dice.item()} ,lr:{optimizer.param_groups[0]["lr"]}')
             
-            if iter_num % 20 == 0: # log training examples every 20 iterations
+            if iter_num % 200 == 0: # log training examples every 20 iterations
                 # image
                 image = image_batch[1, 0:1, :, :].cpu().numpy()
                 image = (image - image.min()) / (image.max() - image.min())
@@ -398,13 +397,14 @@ def main(fold_n:int, train_ids:list, val_ids:list):
         # update learning rate
         scheduler.step(val_loss_ce_mean+val_loss_dice_mean)
         
-
+        # dice computing
         patients_jaccard = np.zeros((len(val_ids), 2))
         patients_dice = np.zeros((len(val_ids), 2))
         for pat_num in range(len(val_ids)):
             pat_id = [val_ids[pat_num]]
             # get data
-            root_path = repo_path / 'data/challange_2023/with_lesion'
+            # root_path = repo_path / 'data/challange_2023/with_lesion'
+            root_path = repo_path / args.data_path
             path_images = (root_path / "image_mha")
             path_labels = (root_path / "label_mha")
             # get all files in the folder in a list, only mha files
