@@ -267,6 +267,7 @@ def main(fold_n:int, train_ids:list, val_ids:list):
     iterator = tqdm(range(args.max_epoch), desc="Training", unit="epoch")
     iter_num = 0
     best_performance = 100100
+    best_dice = 0
 
     for epoch_num in iterator:
         # lists
@@ -368,20 +369,20 @@ def main(fold_n:int, train_ids:list, val_ids:list):
             
             if i_batch % (len(valloader)-1) == 0:
                 # image
-                image = image_batch[1, 0:1, :, :].cpu().numpy()
+                image = image_batch[0, 0:1, :, :].cpu().numpy()
                 image = (image - image.min()) / (image.max() - image.min())
                 # prediction
                 output_masks = outputs['masks'].detach().cpu()
                 output_masks = torch.argmax(torch.softmax(output_masks, dim=1), dim=1, keepdim=True) # we take the max prob per pixel
                 # ground truth
-                labs = label_batch[1, ...].unsqueeze(0) * 50
+                labs = label_batch[0, ...].unsqueeze(0) * 50
                 labs = labs.cpu().numpy()
                 # logging
                 accelerator.log(
                     {
                         "validation_example": [
                             wandb.Image(image, caption="image"),
-                            wandb.Image(output_masks[1, ...] * 50, caption="prediction"),
+                            wandb.Image(output_masks[0, ...] * 50, caption="prediction"),
                             wandb.Image(labs, caption="ground truth"),
                         ]
                     },
@@ -403,7 +404,7 @@ def main(fold_n:int, train_ids:list, val_ids:list):
         for pat_num in range(len(val_ids)):
             pat_id = [val_ids[pat_num]]
             # get data
-            # root_path = repo_path / 'data/challange_2023/with_lesion'
+            root_path = repo_path / 'data/challange_2023/all_slices'
             root_path = repo_path / args.data_path
             path_images = (root_path / "image_mha")
             path_labels = (root_path / "label_mha")
@@ -422,12 +423,13 @@ def main(fold_n:int, train_ids:list, val_ids:list):
             labels_array = []
             preds_array = []
             for sample_batch in valloader_dice:
-                # get data
-                image_batch, label_batch = sample_batch["image"].to(device), sample_batch["label"].to(device)
-                # forward and losses computing
-                outputs = model(image_batch, True, 256)
-                output_masks = outputs['masks'].detach().cpu()
-                output_masks = torch.argmax(torch.softmax(output_masks, dim=1), dim=1, keepdim=False)
+                with torch.no_grad():
+                    # get data
+                    image_batch, label_batch = sample_batch["image"].to(device), sample_batch["label"].to(device)
+                    # forward and losses computing
+                    outputs = model(image_batch, True, 256)
+                    output_masks = outputs['masks'].detach().cpu()
+                    output_masks = torch.argmax(torch.softmax(output_masks, dim=1), dim=1, keepdim=False)
 
                 #label_batch and output_masks in array
                 image_batch = image_batch[:,0].cpu().numpy()
@@ -443,6 +445,8 @@ def main(fold_n:int, train_ids:list, val_ids:list):
             jaccard_value = jaccard_score(labels_array.flatten(), preds_array.flatten())
             # dice from jaccard
             dice_value = 2*jaccard_value/(1+jaccard_value)
+            # log patient dice
+            accelerator.log({f'patient_{pat_id[0]}_dice': dice_value}, step=iter_num)
             # store in array
             patients_jaccard[pat_num, 0] = pat_id[0]
             patients_jaccard[pat_num, 1] = jaccard_value
@@ -454,8 +458,9 @@ def main(fold_n:int, train_ids:list, val_ids:list):
 
 
         # saving model
-        if val_loss_dice_mean < best_performance: # if val dice is better, save model
+        if (val_loss_dice_mean < best_performance) or (mean_dice > best_dice):
             best_performance=val_loss_dice_mean
+            best_dice = mean_dice
             save_mode_path = os.path.join(lora_weights, f'epoch_{str(epoch_num)}.pth')
             try:
                 model.save_lora_parameters(save_mode_path)

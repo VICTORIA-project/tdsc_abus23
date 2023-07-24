@@ -1,7 +1,7 @@
 # settings:
-run_name: all_slices-scratch_c1
+run_name: scratch_c1_val-all
 
-data_path: data/challange_2023/all_slices
+data_path: data/challange_2023/with_lesion
 pretrained_path: null
 report_to: wandb
 
