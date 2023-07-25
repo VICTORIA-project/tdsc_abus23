@@ -26,15 +26,19 @@ from tqdm import tqdm
 from sklearn.metrics import jaccard_score
 
 # special imports
-from datasets_utils.datasets import ABUS_dataset
+from datasets_utils.datasets import ABUS_test
 sys.path.append(str(repo_path / 'SAMed')) if str(repo_path / 'SAMed') not in sys.path else None
 from SAMed.segment_anything import sam_model_registry
 
 def main():
+    # HP
+    batch_size = 16
+    num_classes = 1
+
     # get SAM model
     checkpoint_dir = repo_path / 'checkpoints'
     sam, _ = sam_model_registry['vit_b'](image_size=256,
-                                        num_classes=3,
+                                        num_classes=num_classes,
                                         checkpoint=str(checkpoint_dir / 'sam_vit_b_01ec64.pth'),
                                         pixel_mean=[0, 0, 0],
                                         pixel_std=[1, 1, 1])
@@ -53,19 +57,50 @@ def main():
 
     val_transform = Compose(
             [
-                EnsureChannelFirstd(keys=['label'], channel_dim='no_channel'),
-
                 ScaleIntensityd(keys=["image"]),
-
-                Resized(keys=["image", "label"], spatial_size=(256, 256),mode=['area','nearest']),
+                Resized(keys=["image"], spatial_size=(256, 256),mode=['area']),
                 EnsureTyped(keys=["image"])
             ])
     
-    for model_path in optimum_weights:
-        # load weighs
-        load_path = repo_path / model_path
-        model.load_lora_parameters(str(load_path))
-        model.eval()
-        model.to(device)
-
+    for pat_id in range(100,130,1): # each val id
         
+        # get data
+        root_path = repo_path / 'data/challange_2023/Val-all_slices'
+        path_images = (root_path / "image_mha")
+        # get all files in the folder in a list, only mha files
+        image_files = sorted([file for file in os.listdir(path_images) if file.endswith('.mha')])
+        # now, we will check if the path has at least one of the ids in the train_ids list
+        val_files = [file for file in image_files if f'id_{pat_id}_' in file]
+        # create final paths
+        image_files = np.array([path_images / i for i in val_files])
+        # define dataset and dataloader
+        db_val = ABUS_test(transform=val_transform,list_dir=image_files)   
+        valloader = DataLoader(db_val, batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True)
+        print(f'The patient id is {pat_id}')
+        print(f'The number of slices is {len(db_val)}')
+        
+        # store final mask per patient
+        output_mask_final = torch.zeros((len(db_val),num_classes,256,256))
+        for model_path in optimum_weights: # for each model learned
+            # load weighs
+            load_path = repo_path / model_path
+            model.load_lora_parameters(str(load_path))
+            model.eval()
+            model.to(device)
+            
+            model_mask = []
+            for sample_batch in valloader: # get some slides
+                # get data
+                image_batch = sample_batch["image"].to(device)
+                # forward and losses computing
+                outputs = model(image_batch, True, 256)
+                # stack the masks
+                model_mask.append(outputs['masks'].detach().cpu())
+            # stack tensors in a single one
+            model_mask = torch.cat(model_mask, dim=0)
+            print(f'The shape of the output is {model_mask.shape}')
+
+
+
+if __name__ == '__main__':
+    main()            
