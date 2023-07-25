@@ -36,7 +36,7 @@ def main():
     # get SAM model
     checkpoint_dir = repo_path / 'checkpoints'
     sam, _ = sam_model_registry['vit_b'](image_size=256,
-                                        num_classes=3,
+                                        num_classes=1,
                                         checkpoint=str(checkpoint_dir / 'sam_vit_b_01ec64.pth'),
                                         pixel_mean=[0, 0, 0],
                                         pixel_std=[1, 1, 1])
@@ -44,15 +44,17 @@ def main():
     pkg = import_module('sam_lora_image_encoder')
     model = pkg.LoRA_Sam(sam, 4)
     # load weighs
-    load_path = repo_path / 'experiments/SAMed_ABUS/results/vanilla_3class/fold0/weights/epoch_73.pth'
+    load_path = repo_path / 'experiments/SAMed_ABUS/results/scratch_c1_val-all/fold4/weights/epoch_3.pth'
     model.load_lora_parameters(str(load_path))
     model.eval()
     model.to(device)
 
     # create fold
     kf = KFold(n_splits=5,shuffle=True,random_state=0)
+    fold_case = 4 # 0,1,2,3,4
     for fold_n, (_, val_ids) in enumerate(kf.split(range(100))):
-        break
+        if fold_n == fold_case:
+            break
     print(f'The number of patients in the validation set is {len(val_ids)}')
     print(f'The patient ids in the validation set are {val_ids}')
     # transform
@@ -67,7 +69,7 @@ def main():
             ])
 
     # HP
-    batch_size = 16
+    batch_size = 32
 
     patients_jaccard = np.zeros((len(val_ids), 2))
     patients_dice = np.zeros((len(val_ids), 2))

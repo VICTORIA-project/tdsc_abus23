@@ -35,19 +35,6 @@ preprocess_im = Compose(
         ]
 )
 
-preprocess_label = Compose(
-        [ # classic squared aspect-preserved centered image
-            Resize(resolution, interpolation= InterpolationMode.NEAREST),
-            CenterCrop(resolution), 
-        ]
-)
-
-low_res_trans = Compose(
-        [ # classic squared aspect-preserved centered image
-            Resize(64, interpolation= InterpolationMode.NEAREST),
-            CenterCrop(64), 
-        ]
-)
 
 def main():
     # define paths, get list of images and labels and split them into train and test
@@ -61,17 +48,20 @@ def main():
     label_dir = save_dir / f'label_{file_format}'
     label_dir.mkdir(exist_ok=True)
 
-    # get list of images using metadata
-    metadata = pd.read_csv(root_path / 'extended_metadata.csv')
+    # data path
+    data_path = root_path / 'DATA'
+    # get all files with ending nrrd
+    files = [f for f in data_path.glob('**/*') if f.suffix == '.nrrd']
 
-    iter = tqdm(metadata.iterrows(), total=len(metadata))
+    iter = tqdm(files, total=len(files))
     # get example image
-    for i, row in metadata.iterrows():    
-        image_path = root_path /  row['data_path']
-        label_path = root_path / row['mask_path']
+    for i, im_path in enumerate(iter):
         # get image and label
-        im = sitk.GetArrayFromImage(sitk.ReadImage(image_path))
-        label = sitk.GetArrayFromImage(sitk.ReadImage(label_path))
+        im = sitk.GetArrayFromImage(sitk.ReadImage(im_path))
+        # get name DATA_100.nrrd
+        name = im_path.stem
+        # extract only id
+        id = int(name.split('_')[-1])
         
         for z in range(im.shape[0]):
             # preprocess image
@@ -80,21 +70,11 @@ def main():
             im_slice = np.asarray(im_slice)
             # put channel first and repeat in RGB
             im_slice = np.repeat(np.expand_dims(im_slice, axis=0), 3, axis=0)
-
-            # preprocess label
-            label_slice = Image.fromarray(label[z])
-            label_slice = preprocess_label(label_slice)
-            # low resolution is needed for checking if there is still a lesion
-            low_label_slice = low_res_trans(label_slice)
-            low_label_slice = np.asarray(low_label_slice)
-            label_slice = np.asarray(label_slice)
         
             # saving path
-            save_name = f'id_{row["case_id"]}_slice_{z}_label_{row["label"]}.{file_format}'
+            save_name = f'id_{id}_slice_{z}.{file_format}'
             # save image
             sitk.WriteImage(sitk.GetImageFromArray(im_slice), str(im_dir / save_name))
-            # save label
-            sitk.WriteImage(sitk.GetImageFromArray(label_slice), str(label_dir / save_name))
         
         iter.update(1)
         # emergency stop
