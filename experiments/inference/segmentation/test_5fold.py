@@ -16,14 +16,13 @@ from monai.transforms import (
     Compose,
     ScaleIntensityd,
     EnsureTyped,
-    EnsureChannelFirstd,
     Resized,
 )
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 from sklearn.metrics import jaccard_score
+import SimpleITK as sitk
 
 # special imports
 from datasets_utils.datasets import ABUS_test
@@ -32,7 +31,7 @@ from SAMed.segment_anything import sam_model_registry
 
 def main():
     # HP
-    batch_size = 16
+    batch_size = 8
     num_classes = 1
 
     # get SAM model
@@ -73,6 +72,7 @@ def main():
         val_files = [file for file in image_files if f'id_{pat_id}_' in file]
         # create final paths
         image_files = np.array([path_images / i for i in val_files])
+        print(image_files)
         # define dataset and dataloader
         db_val = ABUS_test(transform=val_transform,list_dir=image_files)   
         valloader = DataLoader(db_val, batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True)
@@ -80,7 +80,7 @@ def main():
         print(f'The number of slices is {len(db_val)}')
         
         # store final mask per patient
-        output_mask_final = torch.zeros((len(db_val),num_classes,256,256))
+        output_mask_final = torch.zeros((len(db_val),num_classes+1,256,256))
         for model_path in optimum_weights: # for each model learned
             # load weighs
             load_path = repo_path / model_path
@@ -99,6 +99,20 @@ def main():
             # stack tensors in a single one
             model_mask = torch.cat(model_mask, dim=0)
             print(f'The shape of the output is {model_mask.shape}')
+            output_mask_final += model_mask
+        # get the mean
+        output_mask_final /= len(optimum_weights)
+        output_mask_final = torch.argmax(torch.softmax(output_mask_final, dim=1), dim=1, keepdim=True)
+        # remove second dimension channel
+        output_mask_final = output_mask_final[:,0,:,:]
+        # save as nii.gz file
+        output_mask_final = output_mask_final.cpu().numpy()
+        # save as int8
+        output_mask_final = output_mask_final.astype(np.int8)
+        print(f'dtype of the final output is {output_mask_final.dtype}')
+        saving_path = repo_path / 'experiments/inference/segmentation/data/predictions' / f'patient_{pat_id}.nii.gz'
+        # save the mask as nii.gz
+        sitk.WriteImage(sitk.GetImageFromArray(output_mask_final), str(saving_path))
 
 
 

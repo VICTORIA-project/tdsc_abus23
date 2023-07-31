@@ -48,8 +48,6 @@ class ABUS_test(Dataset):
         images = [sitk.GetArrayFromImage(sitk.ReadImage(str(i))) for i in list_dir]
 
         self.sample_list = np.array(images)
-        
-        self.resize=Compose([Resized(keys=["label"], spatial_size=(64, 64),mode=['nearest'])])
 
     def __len__(self):
         return len(self.sample_list)
