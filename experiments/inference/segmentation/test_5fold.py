@@ -29,6 +29,14 @@ from datasets_utils.datasets import ABUS_test
 sys.path.append(str(repo_path / 'SAMed')) if str(repo_path / 'SAMed') not in sys.path else None
 from SAMed.segment_anything import sam_model_registry
 
+import re
+# Define a custom sorting key function
+def slice_number(filename):
+    match = re.search(r'slice_(\d+)\.mha', filename)
+    if match:
+        return int(match.group(1))
+    return -1  # Default value if the pattern is not found
+
 def main():
     # HP
     batch_size = 8
@@ -64,12 +72,13 @@ def main():
     for pat_id in range(100,130,1): # each val id
         
         # get data
-        root_path = repo_path / 'data/challange_2023/Val-all_slices'
+        root_path = repo_path / 'data/challange_2023/Val/all-slices'
         path_images = (root_path / "image_mha")
         # get all files in the folder in a list, only mha files
         image_files = sorted([file for file in os.listdir(path_images) if file.endswith('.mha')])
         # now, we will check if the path has at least one of the ids in the train_ids list
         val_files = [file for file in image_files if f'id_{pat_id}_' in file]
+        val_files = sorted(val_files, key=slice_number)
         # create final paths
         image_files = np.array([path_images / i for i in val_files])
         print(image_files)
