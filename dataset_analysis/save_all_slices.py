@@ -54,7 +54,7 @@ def main():
     root_path = repo_path / 'data/challange_2023/Val'
 
     # new images and labels
-    save_dir = repo_path / 'data/challange_2023' / 'Val-all_slices'
+    save_dir = repo_path / 'data/challange_2023' / 'Train' / 'all_slices'
     save_dir.mkdir(exist_ok=True)
     im_dir = save_dir / f'image_{file_format}'
     im_dir.mkdir(exist_ok=True)
