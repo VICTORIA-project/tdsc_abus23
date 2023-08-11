@@ -23,6 +23,9 @@ import torch
 from torch.utils.data import DataLoader
 from sklearn.metrics import jaccard_score
 import SimpleITK as sitk
+from PIL import Image
+import torchvision
+import pandas as pd
 
 # special imports
 from datasets_utils.datasets import ABUS_test
@@ -69,7 +72,15 @@ def main():
                 EnsureTyped(keys=["image"])
             ])
     
+
+    metadata_path = repo_path / 'data/challange_2023/Val/metadata.csv'
+    metadata = pd.read_csv(metadata_path)
+
+    
     for pat_id in range(100,130,1): # each val id
+        patient_meta = metadata[metadata['case_id'] == pat_id]
+        original_shape = patient_meta['shape'].apply(lambda x: tuple(map(int, x[1:-1].split(',')))).values[0]
+        diff_shape = original_shape[0]-original_shape[1]
         
         # get data
         root_path = repo_path / 'data/challange_2023/Val/all-slices'
@@ -81,7 +92,6 @@ def main():
         val_files = sorted(val_files, key=slice_number)
         # create final paths
         image_files = np.array([path_images / i for i in val_files])
-        print(image_files)
         # define dataset and dataloader
         db_val = ABUS_test(transform=val_transform,list_dir=image_files)   
         valloader = DataLoader(db_val, batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True)
@@ -118,8 +128,22 @@ def main():
         output_mask_final = output_mask_final.cpu().numpy()
         # save as int8
         output_mask_final = output_mask_final.astype(np.int8)
-        print(f'dtype of the final output is {output_mask_final.dtype}')
-        saving_path = repo_path / 'experiments/inference/segmentation/data/predictions' / f'patient_{pat_id}.nii.gz'
+        print(f'The shape of the final output is {output_mask_final.shape}')
+
+        # reshape each slice
+        resize_stack = []
+        for slice_num in range(output_mask_final.shape[0]):
+            im_slice = output_mask_final[slice_num,:,:]
+            im_slice = Image.fromarray(im_slice)
+            im_slice_comeback = torchvision.transforms.Resize(original_shape[1], interpolation= torchvision.transforms.InterpolationMode.NEAREST)(im_slice)
+            padded = torchvision.transforms.Pad((int(diff_shape/2),0))(im_slice_comeback)
+            padded = np.asanyarray(torchvision.transforms.Resize(original_shape[:2][::-1], interpolation= torchvision.transforms.InterpolationMode.NEAREST)(padded))
+            resize_stack.append(padded)
+        # stack all slices
+        output_mask_final = np.stack(resize_stack, axis=0)
+        print(f'The shape of the final output is {output_mask_final.shape}')
+
+        saving_path = repo_path / 'experiments/inference/segmentation/data/predictions' / f'MASK_{pat_id}.nii.gz'
         # save the mask as nii.gz
         sitk.WriteImage(sitk.GetImageFromArray(output_mask_final), str(saving_path))
 

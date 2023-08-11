@@ -41,7 +41,7 @@ def main():
     root_path = repo_path / 'data/challange_2023/Val'
 
     # new images and labels
-    save_dir = repo_path / 'data/challange_2023' / 'Val-all_slices'
+    save_dir = root_path / 'all-slices'
     save_dir.mkdir(exist_ok=True)
     im_dir = save_dir / f'image_{file_format}'
     im_dir.mkdir(exist_ok=True)
@@ -54,10 +54,19 @@ def main():
     files = [f for f in data_path.glob('**/*') if f.suffix == '.nrrd']
 
     iter = tqdm(files, total=len(files))
-    # get example image
+    
+    # metadata
+    metadata = pd.DataFrame(columns=['case_id', 'data_path', 'shape'])
+    # get example 3D image
     for i, im_path in enumerate(iter):
-        # get image and label
-        im = sitk.GetArrayFromImage(sitk.ReadImage(im_path))
+        # get 3D image
+        im_sitk = sitk.ReadImage(im_path)
+        # store metadata
+        metadata.loc[i, 'case_id'] = im_path.stem.split('_')[-1]
+        metadata.loc[i, 'data_path'] = 'DATA/'+im_path.name
+        metadata.loc[i, 'shape'] = im_sitk.GetSize()
+
+        im = sitk.GetArrayFromImage(im_sitk)
         # get name DATA_100.nrrd
         name = im_path.stem
         # extract only id
@@ -80,6 +89,10 @@ def main():
         # emergency stop
         if i == stopping:
             break
+    # save metadata
+    metadata = metadata.sort_values(by=['case_id'])
+    metadata.to_csv(root_path / 'metadata.csv', index=False)
+    
 
 if __name__ == '__main__':
     main()
