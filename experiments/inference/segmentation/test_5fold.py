@@ -143,7 +143,7 @@ def main():
         output_mask_final = np.stack(resize_stack, axis=0)
         print(f'The shape of the final output is {output_mask_final.shape}')
 
-        saving_path = repo_path / 'experiments/inference/segmentation/data/predictions' / f'MASK_{pat_id}.nii.gz'
+        saving_path = repo_path / 'experiments/inference/segmentation/data/predictions' / 'vanilla' /  f'MASK_{pat_id}.nii.gz'
         # save the mask as nii.gz
         sitk.WriteImage(sitk.GetImageFromArray(output_mask_final), str(saving_path))
 
