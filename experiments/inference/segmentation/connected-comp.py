@@ -23,6 +23,7 @@ def main():
 
     for path in all_files:
         name = Path(path).stem
+        id = name.split('_')[1]
         segmentation_mask = sitk.ReadImage(directory_path / path)
         segmentation_mask = sitk.GetArrayFromImage(segmentation_mask)
         print(f'The size of the segmentation mask is {segmentation_mask.shape}')
@@ -47,4 +48,7 @@ def main():
         # save largest component mask
         largest_component_mask = sitk.GetImageFromArray(largest_component_mask)
         saving_dir = repo_path / 'experiments/inference/segmentation/data/predictions/vanilla-lcc'
-        sitk.WriteImage(largest_component_mask, saving_dir / f'MASK_{id}_largest_component.nii.gz')
+        sitk.WriteImage(largest_component_mask, saving_dir / f'MASK_{id}.nii.gz')
+    
+if __name__ == '__main__':
+    main()
