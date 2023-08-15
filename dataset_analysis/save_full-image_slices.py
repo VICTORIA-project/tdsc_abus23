@@ -18,7 +18,7 @@ from PIL import Image
 from tqdm import tqdm
 
 def main():
-    stopping = 2 # for debugging
+    stopping = None # for debugging
 
     # Expansion HP
     x_expansion = 865
@@ -26,7 +26,7 @@ def main():
     x_resizing = 512
     y_resizing = 512
     file_format = 'mha'
-    folder_name = f'full-slice_{x_resizing}x{y_resizing}'
+    folder_name = f'full-slice_{x_resizing}x{y_resizing}_with-lesion'
     data_directory = repo_path / 'data/challange_2023' / 'Train'
 
     # transforms
@@ -73,10 +73,12 @@ def main():
         if im.shape[2]<x_expansion:
             print('Expanding x dimension')
             im = np.concatenate((im, np.zeros((im.shape[0], im.shape[1], x_expansion-im.shape[2]), dtype=np.int8)), axis=2)
+            label = np.concatenate((label, np.zeros((label.shape[0], label.shape[1], x_expansion-label.shape[2]), dtype=np.int8)), axis=2)
 
         if im.shape[1]<y_expansion:
-            print('Expanding y dimension')
+            # print('Expanding y dimension')
             im = np.concatenate((im, np.zeros((im.shape[0], y_expansion-im.shape[1], im.shape[2]), dtype=np.int8)), axis=1)
+            label = np.concatenate((label, np.zeros((label.shape[0], y_expansion-label.shape[1], label.shape[2]), dtype=np.int8)), axis=1)
 
         # z values wıth lesion
         z_values = np.unique(np.where(label)[0])
