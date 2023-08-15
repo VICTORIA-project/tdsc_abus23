@@ -14,6 +14,7 @@ class ABUS_dataset(Dataset):
         Args:
             list_dir (list): list of two numpy arrays, each for the images and the labels
             transform (transforms, optional): MONAI of torch transforms. Defaults to None.
+            spatial_size (tuple, optional): size of the low resolution labels. Defaults to (64, 64).
         """
         self.transform = transform  # using transform in torch!
         images = [sitk.GetArrayFromImage(sitk.ReadImage(str(i))) for i in list_dir[0]]
