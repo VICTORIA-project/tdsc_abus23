@@ -8,7 +8,7 @@ from monai.transforms import (
 
 class ABUS_dataset(Dataset):
     
-    def __init__(self, list_dir:list, transform=None):
+    def __init__(self, list_dir:list, transform=None, spatial_size=(64, 64)):
         """from a list of directories and a transform, create the ABUS dataset
 
         Args:
@@ -21,7 +21,7 @@ class ABUS_dataset(Dataset):
 
         self.sample_list = np.array(list(zip(images,labels)), dtype=object) # more efficient?
         
-        self.resize=Compose([Resized(keys=["label"], spatial_size=(64, 64),mode=['nearest'])])
+        self.resize=Compose([Resized(keys=["label"], spatial_size=spatial_size,mode=['nearest'])])
 
     def __len__(self):
         return len(self.sample_list)
