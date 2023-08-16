@@ -404,7 +404,7 @@ def main(fold_n:int, train_ids:list, val_ids:list):
         for pat_num in range(len(val_ids)):
             pat_id = [val_ids[pat_num]]
             # get data
-            root_path = repo_path / 'data/challange_2023/all_slices'
+            # root_path = repo_path / 'data/challange_2023/all_slices'
             root_path = repo_path / args.data_path
             path_images = (root_path / "image_mha")
             path_labels = (root_path / "label_mha")
