@@ -490,4 +490,7 @@ if __name__ == '__main__':
     ### make the split and get files list. We make a split of our 100 patient ids
     kf = KFold(n_splits=args.num_folds,shuffle=args.split_shuffle,random_state=args.split_seed)
     for fold_n, (train_ids, val_ids) in enumerate(kf.split(range(100))):
+        # pass first n folds
+        if fold_n < args.from_fold:
+            continue
         main(fold_n, train_ids, val_ids) 
