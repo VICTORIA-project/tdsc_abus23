@@ -121,9 +121,9 @@ def main():
             output_mask_final += model_mask
         # get the mean
         output_mask_final /= len(optimum_weights)
-        output_mask_final = torch.argmax(torch.softmax(output_mask_final, dim=1), dim=1, keepdim=True)
+        output_mask_final = torch.argmax(torch.softmax(output_mask_final, dim=1), dim=1, keepdim=False) # can reduce this and next line
         # remove second dimension channel
-        output_mask_final = output_mask_final[:,0,:,:]
+        # output_mask_final = output_mask_final[:,0,:,:]
         # save as nii.gz file
         output_mask_final = output_mask_final.cpu().numpy()
         # save as int8
