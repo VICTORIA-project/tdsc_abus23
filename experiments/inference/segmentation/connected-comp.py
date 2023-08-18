@@ -17,8 +17,12 @@ import numpy as np
 
 def main():
     
+    # HP
+    directory_path = repo_path / 'experiments/inference/segmentation/data/predictions/full-size/multi-model'
+    saving_dir = repo_path / 'experiments/inference/segmentation/data/predictions/full-size/multi-model_lcc'
+    saving_dir.mkdir(parents=True, exist_ok=True)
+
     # get all files in the directory
-    directory_path = repo_path / 'experiments/inference/segmentation/data/predictions/vanilla'
     all_files = [file for file in os.listdir(directory_path) if file.endswith('.nii.gz')]
 
     for path in all_files:
@@ -43,11 +47,10 @@ def main():
         # Create a new mask containing only the largest component
         largest_component_mask = labeled_mask == largest_component_label
         # transform boolean to int
-        largest_component_mask = largest_component_mask.astype(np.int8)
+        largest_component_mask = largest_component_mask.astype(np.uint8)
 
         # save largest component mask
         largest_component_mask = sitk.GetImageFromArray(largest_component_mask)
-        saving_dir = repo_path / 'experiments/inference/segmentation/data/predictions/vanilla-lcc'
         sitk.WriteImage(largest_component_mask, saving_dir / f'MASK_{id}.nii.gz')
     
 if __name__ == '__main__':
