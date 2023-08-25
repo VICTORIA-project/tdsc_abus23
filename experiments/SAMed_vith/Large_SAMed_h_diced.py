@@ -54,7 +54,6 @@ sys.path.append(str(repo_path / 'SAMed'))
 from SAMed.segment_anything import sam_model_registry
 from SAMed.utils import DiceLoss #, Focal_loss
 
-
 def calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, dice_weight:float=0.8):
     """Compute the loss of the network using a linear combination of cross entropy and dice loss.
 
@@ -147,7 +146,7 @@ def main(fold_n:int, train_ids:list, val_ids:list):
 
     train_transform = Compose(
         [
-            EnsureChannelFirstd(keys=['label'], channel_dim='no_channel'), # to add one channel dim to the label (1,256,256)
+            EnsureChannelFirstd(keys=['label'], channel_dim='no_channel'), # to add one channel dim to the label (1,512,512)
 
             ScaleIntensityd(keys=["image"]), # to scale the image intensity to [0,1]
 
@@ -165,7 +164,7 @@ def main(fold_n:int, train_ids:list, val_ids:list):
             OneOf(transforms=[affine, deform], weights=[0.8, 0.2]), # apply one of the two transforms with the given weights
             ##
 
-            Resized(keys=["image", "label"], spatial_size=(256, 256),mode=['area','nearest']),
+            Resized(keys=["image", "label"], spatial_size=(512, 512),mode=['area','nearest']),
 
             EnsureTyped(keys=["image"] ), # ensure it is a torch tensor or np array
         ]
@@ -178,7 +177,7 @@ def main(fold_n:int, train_ids:list, val_ids:list):
 
             ScaleIntensityd(keys=["image"]),
 
-            Resized(keys=["image", "label"], spatial_size=(256, 256),mode=['area','nearest']),
+            Resized(keys=["image", "label"], spatial_size=(512, 512),mode=['area','nearest']),
             EnsureTyped(keys=["image"])
         ])
 
@@ -200,15 +199,15 @@ def main(fold_n:int, train_ids:list, val_ids:list):
     list_val = [image_files, label_files] # this is what we will pass to the dataset <-
 
     # define datasets, notice that the inder depends on the fold
-    db_train = ABUS_dataset(transform=train_transform,list_dir=list_train)
-    db_val = ABUS_dataset(transform=val_transform,list_dir=list_val)   
+    db_train = ABUS_dataset(transform=train_transform,list_dir=list_train, spatial_size=(512//4, 512//4))
+    db_val = ABUS_dataset(transform=val_transform,list_dir=list_val, spatial_size=(512//4, 512//4))
 
     # define dataloaders
     trainloader = DataLoader(db_train, batch_size=args.train_batch_size, shuffle=True, num_workers=8, pin_memory=True)
     valloader = DataLoader(db_val, batch_size=args.val_batch_size, shuffle=True, num_workers=8, pin_memory=True)
 
     # get SAM model
-    sam, _ = sam_model_registry['vit_h'](image_size=256,
+    sam, _ = sam_model_registry['vit_h'](image_size=512,
                                         num_classes=args.num_classes,
                                         checkpoint=str(checkpoint_dir / 'sam_vit_h_4b8939.pth'),
                                         pixel_mean=[0, 0, 0],
@@ -281,7 +280,7 @@ def main(fold_n:int, train_ids:list, val_ids:list):
                 assert image_batch.max() <= 3, f'image_batch max: {image_batch.max()}' #check the intensity range of the image
                 
                 # forward and loss computing
-                outputs = model(batched_input = image_batch, multimask_output = args.multimask_output, image_size = 256)
+                outputs = model(batched_input = image_batch, multimask_output = args.multimask_output, image_size = 512)
                 loss, loss_ce, loss_dice = calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, 0.8)
                 accelerator.backward(loss)
                 optimizer.step()
@@ -348,17 +347,18 @@ def main(fold_n:int, train_ids:list, val_ids:list):
         # validation time
         model.eval()
         for i_batch, sampled_batch in enumerate(valloader):
-            image_batch, label_batch = sampled_batch["image"], sampled_batch["label"]
-            low_res_label_batch = sampled_batch['low_res_label']
-            
-            assert image_batch.max() <= 3, f'image_batch max: {image_batch.max()}'
-            
-            # forward and losses computing
-            outputs = model(image_batch, args.multimask_output, 256)
-            loss, loss_ce, loss_dice = calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, 0.8)
-            # append lists
-            val_loss_ce.append(loss_ce.detach().cpu().numpy())
-            val_loss_dice.append(loss_dice.detach().cpu().numpy())
+            with torch.no_grad():
+                image_batch, label_batch = sampled_batch["image"], sampled_batch["label"]
+                low_res_label_batch = sampled_batch['low_res_label']
+                
+                assert image_batch.max() <= 3, f'image_batch max: {image_batch.max()}'
+                
+                # forward and losses computing
+                outputs = model(image_batch, args.multimask_output, 512)
+                loss, loss_ce, loss_dice = calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, 0.8)
+                # append lists
+                val_loss_ce.append(loss_ce.detach().cpu().numpy())
+                val_loss_dice.append(loss_dice.detach().cpu().numpy())
             
             if i_batch % (len(valloader)-1) == 0:
                 # image
@@ -397,7 +397,7 @@ def main(fold_n:int, train_ids:list, val_ids:list):
         for pat_num in range(len(val_ids)):
             pat_id = [val_ids[pat_num]]
             # get data
-            root_path = repo_path / 'data/challange_2023/all_slices'
+            # root_path = repo_path / 'data/challange_2023/all_slices'
             root_path = repo_path / args.data_path
             path_images = (root_path / "image_mha")
             path_labels = (root_path / "label_mha")
@@ -420,7 +420,7 @@ def main(fold_n:int, train_ids:list, val_ids:list):
                     # get data
                     image_batch, label_batch = sample_batch["image"].to(device), sample_batch["label"].to(device)
                     # forward and losses computing
-                    outputs = model(image_batch, True, 256)
+                    outputs = model(image_batch, True, 512)
                     output_masks = outputs['masks'].detach().cpu()
                     output_masks = torch.argmax(torch.softmax(output_masks, dim=1), dim=1, keepdim=False)
 
@@ -483,4 +483,7 @@ if __name__ == '__main__':
     ### make the split and get files list. We make a split of our 100 patient ids
     kf = KFold(n_splits=args.num_folds,shuffle=args.split_shuffle,random_state=args.split_seed)
     for fold_n, (train_ids, val_ids) in enumerate(kf.split(range(100))):
+        # pass first n folds
+        if fold_n < args.from_fold:
+            continue
         main(fold_n, train_ids, val_ids) 
