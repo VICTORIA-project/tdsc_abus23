@@ -8,7 +8,7 @@ sys.path.insert(0,str(repo_path)) if str(repo_path) not in sys.path else None
 
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
 device = 0 # for dice special
 
 # Libraries
@@ -51,7 +51,7 @@ from monai.transforms import (
 # extra imports
 from datasets_utils.datasets import ABUS_dataset
 sys.path.append(str(repo_path / 'SAMed'))
-from SAMed.segment_anything import sam_model_registry
+from SAMed.SAMed_h.segment_anything import sam_model_registry
 from SAMed.utils import DiceLoss #, Focal_loss
 
 def calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, dice_weight:float=0.8):
