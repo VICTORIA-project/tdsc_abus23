@@ -28,25 +28,9 @@ import torchvision
 import pandas as pd
 
 # special imports
-from datasets_utils.datasets import ABUS_test
+from datasets_utils.datasets import ABUS_test, slice_number
 sys.path.append(str(repo_path / 'SAMed')) if str(repo_path / 'SAMed') not in sys.path else None
 from SAMed.segment_anything import sam_model_registry
-
-import re
-# Define a custom sorting key function
-def slice_number(filename):
-    """order images by slice number
-
-    Args:
-        filename (str): file name in string
-
-    Returns:
-        int: match group int
-    """
-    match = re.search(r'slice_(\d+)\.mha', filename)
-    if match:
-        return int(match.group(1))
-    return -1  # Default value if the pattern is not found
 
 def main():
     # HP

@@ -2,6 +2,7 @@
 data/
 results/
 results_load_more/
+model_weights/
 
 # ignore SAMed library files
 experiments/SAMed_babies/SAMed

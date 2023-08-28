@@ -6,6 +6,8 @@ from monai.transforms import (
     Resized,
 )
 
+import re
+
 class ABUS_dataset(Dataset):
     
     def __init__(self, list_dir:list, transform=None, spatial_size=(64, 64)):
@@ -58,3 +60,18 @@ class ABUS_test(Dataset):
             sample=self.transform({"image": self.sample_list[idx]})
         return sample
     
+
+# Define a custom sorting key function
+def slice_number(filename):
+    """order images by slice number
+
+    Args:
+        filename (str): file name in string
+
+    Returns:
+        int: match group int
+    """
+    match = re.search(r'slice_(\d+)\.mha', filename)
+    if match:
+        return int(match.group(1))
+    return -1  # Default value if the pattern is not found
