@@ -1,14 +1,15 @@
+docker_running = False
+
 #Add repo path to the system path
 from pathlib import Path
-import os, sys
-repo_path= Path.cwd().resolve()
-while '.gitignore' not in os.listdir(repo_path): # while not in the root of the repo
-    repo_path = repo_path.parent #go up one level
-sys.path.insert(0,str(repo_path)) if str(repo_path) not in sys.path else None
+if not docker_running: # if we are running locally
+    repo_path = Path('/home/ricardo/ABUS2023_documents/tdsc_abus23')
+else: # if running in the container
+    repo_path = Path('opt/algorithm')
 
-import os
+import os, sys
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
 device = 0
 
 from importlib import import_module
@@ -21,7 +22,6 @@ from monai.transforms import (
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from sklearn.metrics import jaccard_score
 import SimpleITK as sitk
 from PIL import Image
 import torchvision
