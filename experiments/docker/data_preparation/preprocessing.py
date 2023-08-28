@@ -3,9 +3,11 @@ docker_running = False
 
 # define repo path and add it to the path
 from pathlib import Path
-import sys
+import sys, os
 if not docker_running: # if we are running locally
-    repo_path = Path('/home/ricardo/ABUS2023_documents/tdsc_abus23')
+    repo_path= Path.cwd().resolve()
+    while '.gitignore' not in os.listdir(repo_path): # while not in the root of the repo
+        repo_path = repo_path.parent #go up one level
 else: # if running in the container
     repo_path = Path('opt/usuari')
 sys.path.insert(0,str(repo_path)) if str(repo_path) not in sys.path else None
@@ -102,6 +104,7 @@ def main():
         # emergency stop
         if i == stopping:
             break
+    iter.close()
     print('2D images saved')
 
 if __name__ == '__main__':

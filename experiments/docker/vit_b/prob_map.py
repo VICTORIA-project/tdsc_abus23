@@ -5,7 +5,9 @@ docker_running = False
 from pathlib import Path
 import os, sys
 if not docker_running: # if we are running locally
-    repo_path = Path('/home/ricardo/ABUS2023_documents/tdsc_abus23')
+    repo_path= Path.cwd().resolve()
+    while '.gitignore' not in os.listdir(repo_path): # while not in the root of the repo
+        repo_path = repo_path.parent #go up one level
 else: # if running in the container
     repo_path = Path('opt/usuari')
 sys.path.insert(0,str(repo_path)) if str(repo_path) not in sys.path else None
@@ -28,6 +30,7 @@ import SimpleITK as sitk
 from PIL import Image
 import torchvision
 import pandas as pd
+from tqdm import tqdm
 
 # special imports
 from datasets_utils.datasets import ABUS_test, slice_number
@@ -36,7 +39,7 @@ from SAMed.segment_anything import sam_model_registry
 
 def main():
     # HP
-    batch_size = 16
+    batch_size = 32
     num_classes = 1
     image_size = 512
 
@@ -68,30 +71,37 @@ def main():
                     EnsureTyped(keys=["image"])
                 ])
     
+    # get metadata
     metadata_path = repo_path / 'data/challange_2023/Test/metadata.csv'
     metadata = pd.read_csv(metadata_path)
+    # saving dir
+    saving_dir = repo_path / 'data/challange_2023/Test' / 'vitb_probs'
+    saving_dir.mkdir(parents=True, exist_ok=True)
 
-
-    for pat_id in range(100,130,1): # each val id
+    iteration = tqdm(metadata.iterrows(), total=len(metadata))
+    # prediction loop
+    for pat_id in metadata['case_id']: # each val id
+        # Settings
         patient_meta = metadata[metadata['case_id'] == pat_id]
         original_shape = patient_meta['shape'].apply(lambda x: tuple(map(int, x[1:-1].split(',')))).values[0]
 
-        # get data
+        # 1. Data loading
         root_path = repo_path / 'data/challange_2023/Val/full-slice_512x512_all'
         path_images = (root_path / "image_mha")
         # get all files in the folder in a list, only mha files
         image_files = [file for file in os.listdir(path_images) if file.endswith('.mha')] # unordered files
-        # # now, we will check if the path has at least one of the ids in the train_ids list
+        # now, we will check if the path has at least one of the ids in the train_ids list
         val_files = [file for file in image_files if f'id_{pat_id}_' in file]
         val_files = sorted(val_files, key=slice_number) # sort them
-        # # create final paths
+        # create final paths
         image_files = np.array([path_images / i for i in val_files])
         db_val = ABUS_test(transform=test_transform,list_dir=image_files)   
         valloader = DataLoader(db_val, batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True)
         print(f'The patient id is {pat_id}')
         print(f'The number of slices is {len(db_val)}')
-        # store final mask per patient
-        accumulated_mask = torch.zeros((len(db_val),num_classes+1,image_size,image_size))
+        
+        # 2. Create probability volume
+        accumulated_mask = torch.zeros((len(db_val),num_classes+1,image_size,image_size)) # store final mask per patient
         
         for model_path in optimum_weights: # for each model learned
         
@@ -99,10 +109,10 @@ def main():
             load_path = repo_path / model_path
             model.load_lora_parameters(str(load_path))
             model.eval()
-            model.to(device);
+            model.to(device)
 
-            model_mask = []
-            for sample_batch in valloader: # get some slides
+            model_mask = [] # for appending slices of same model
+            for sample_batch in valloader:
                 with torch.no_grad():
                     # get data
                     image_batch = sample_batch["image"].to(device)
@@ -136,16 +146,16 @@ def main():
         resized_mask = np.stack(resized_mask, axis=0)
         print(f'The shape of the resized mask is {resized_mask.shape}')
 
-        # get original size
+        # get original size and save
         final_mask = resized_mask[:,:original_shape[1],:original_shape[0]]
         print(f'The shape of the final output is {final_mask.shape}')
-
-        saving_dir = repo_path / 'experiments/inference/segmentation/data/predictions' / 'full-size' / 'multi-model_probs'
-        saving_dir.mkdir(parents=True, exist_ok=True)
         saving_path = saving_dir  / f'MASK_{pat_id}.nii.gz'
 
         # save the mask as nii.gz
-        sitk.WriteImage(sitk.GetImageFromArray(final_mask), str(saving_path))
+        sitk.WriteImage(sitk.GetImageFromArray(final_mask), str(saving_path), True, 0)
+        # increment iteration
+        iteration.update(1)
+    iteration.close()
 
 if __name__ == '__main__':
     main()
