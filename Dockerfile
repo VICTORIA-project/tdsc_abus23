@@ -17,17 +17,16 @@ ENV PATH="/home/usuari/.local/bin:${PATH}"
 COPY --chown=usuari:usuari requirements.txt /opt/usuari/
 RUN python3 -m pip install --user -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 
-COPY --chown=usuari:usuari model/ /opt/usuari/model/
-COPY --chown=usuari:usuari test/ /opt/usuari/test/
+# Model checkpoints
+COPY --chown=usuari:usuari checkpoints/ /opt/usuari/checkpoints/
 COPY --chown=usuari:usuari model_weights/ /opt/usuari/model_weights/
-COPY --chown=usuari:usuari segment_anything/ /opt/usuari/segment_anything/
-COPY --chown=usuari:usuari process.py /opt/usuari/
-COPY --chown=usuari:usuari sam_lora_image_encoder.py /opt/usuari/
-COPY --chown=usuari:usuari sam_lora_image_encoder_mask_decoder.py /opt/usuari/
-COPY --chown=usuari:usuari segmentation.py /opt/usuari/
+# Source code
+COPY --chown=usuari:usuari SAMed/segment_anything/ /opt/usuari/segment_anything/
+COPY --chown=usuari:usuari SAMed/sam_lora_image_encoder.py /opt/usuari/
+COPY --chown=usuari:usuari SAMed/sam_lora_image_encoder_mask_decoder.py /opt/usuari/
+COPY --chown=usuari:usuari experiments/docker/. /opt/usuari/scripts
 
-
+# Set the default command to run when starting the container
 ENTRYPOINT python3 -m process $0 $@
 
 LABEL nl.diagnijmegen.rse.usuari.name=seg_algorithm
-
