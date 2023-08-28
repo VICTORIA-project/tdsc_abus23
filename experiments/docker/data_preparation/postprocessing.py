@@ -22,9 +22,9 @@ def main():
     # HP
     high_threshold = 0.65
     # load seed
-    seeds_dir = repo_path / 'experiments/inference/segmentation/data/predictions/full-size/high-probs_no-lcc_limed_0.98_top-hat_0.0001'
-    probs_dir = repo_path / 'experiments/inference/segmentation/data/predictions/full-size/multi-model_probs'
-    save_dir = repo_path / f'experiments/inference/segmentation/data/predictions/full-size/high-probs_no-lcc_limed_0.98_top-hat_0.0001_{high_threshold}'
+    seeds_dir = repo_path / 'data/challange_2023/Test/high-probs_top-hat_0.0001'
+    probs_dir = repo_path / 'data/challange_2023/Test/vitb_probs'
+    save_dir = repo_path / 'predict'
     save_dir.mkdir(parents=True, exist_ok=True)
     files = sorted(os.listdir(seeds_dir))
     
