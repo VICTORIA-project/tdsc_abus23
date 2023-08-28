@@ -1,13 +1,15 @@
+# running as docker?
 docker_running = False
 
-#Add repo path to the system path
+# define repo path and add it to the path
 from pathlib import Path
+import os, sys
 if not docker_running: # if we are running locally
     repo_path = Path('/home/ricardo/ABUS2023_documents/tdsc_abus23')
 else: # if running in the container
     repo_path = Path('opt/algorithm')
+sys.path.insert(0,str(repo_path)) if str(repo_path) not in sys.path else None
 
-import os, sys
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
 device = 0
@@ -50,13 +52,11 @@ def main():
     model = pkg.LoRA_Sam(sam, 4)
 
     optimum_weights = [
-        'experiments/SAMed_ABUS/results/full-slice-lesion/fold0/weights/epoch_19.pth', #3220
-        'experiments/SAMed_ABUS/results/full-slice-lesion/fold1/weights/epoch_13.pth',
-        'experiments/SAMed_ABUS/results/full-slice-lesion/fold2/weights/epoch_5.pth',
-        'experiments/SAMed_ABUS/results/full-slice-lesion/fold3/weights/epoch_25.pth',
-        'experiments/SAMed_ABUS/results/full-slice-lesion/fold4/weights/epoch_14.pth',
-
-
+        'model_weights/fold0/epoch_19.pth',
+        'model_weights/fold1/epoch_13.pth',
+        'model_weights/fold2/epoch_5.pth',
+        'model_weights/fold3/epoch_25.pth',
+        'model_weights/fold4/epoch_14.pth',
     ]
 
     val_transform = Compose(
