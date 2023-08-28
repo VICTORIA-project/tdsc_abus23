@@ -4,6 +4,10 @@ results/
 results_load_more/
 model_weights/
 
+# docker related
+input/
+predict/
+
 # ignore SAMed library files
 experiments/SAMed_babies/SAMed
 SAMed/

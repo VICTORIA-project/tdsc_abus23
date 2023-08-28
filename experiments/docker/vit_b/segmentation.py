@@ -7,7 +7,7 @@ import os, sys
 if not docker_running: # if we are running locally
     repo_path = Path('/home/ricardo/ABUS2023_documents/tdsc_abus23')
 else: # if running in the container
-    repo_path = Path('opt/algorithm')
+    repo_path = Path('opt/usuari')
 sys.path.insert(0,str(repo_path)) if str(repo_path) not in sys.path else None
 
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
@@ -51,6 +51,7 @@ def main():
     pkg = import_module('sam_lora_image_encoder')
     model = pkg.LoRA_Sam(sam, 4)
 
+    # define optimum weights
     optimum_weights = [
         'model_weights/fold0/epoch_19.pth',
         'model_weights/fold1/epoch_13.pth',
@@ -59,14 +60,15 @@ def main():
         'model_weights/fold4/epoch_14.pth',
     ]
 
-    val_transform = Compose(
+    # transformations used on th images
+    test_transform = Compose(
                 [
                     ScaleIntensityd(keys=["image"]),
                     Resized(keys=["image"], spatial_size=(image_size, image_size),mode=['area']),
                     EnsureTyped(keys=["image"])
                 ])
     
-    metadata_path = repo_path / 'data/challange_2023/Val/metadata.csv'
+    metadata_path = repo_path / 'data/challange_2023/Test/metadata.csv'
     metadata = pd.read_csv(metadata_path)
 
 
@@ -84,7 +86,7 @@ def main():
         val_files = sorted(val_files, key=slice_number) # sort them
         # # create final paths
         image_files = np.array([path_images / i for i in val_files])
-        db_val = ABUS_test(transform=val_transform,list_dir=image_files)   
+        db_val = ABUS_test(transform=test_transform,list_dir=image_files)   
         valloader = DataLoader(db_val, batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True)
         print(f'The patient id is {pat_id}')
         print(f'The number of slices is {len(db_val)}')
