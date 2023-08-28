@@ -58,7 +58,9 @@ def main():
 
     # load probability map files
     probs_dir = repo_path / 'data/challange_2023/Test/vitb_probs'
+    # get files that end with nii.gz
     files = sorted(os.listdir(probs_dir))
+    files = [f for f in files if f.endswith('.nii.gz')]
 
     for name in tqdm(files):
         # load probs
@@ -77,16 +79,16 @@ def main():
         # get lcc
         mask = lcc(mask)
         
-        # # check with man_2
-        # control_mask_dir = repo_path / 'experiments/inference/segmentation/data/predictions/full-size/man_2'
-        # control_mask_path = control_mask_dir / name
-        # control_mask = sitk.ReadImage(str(control_mask_path))
-        # control_mask = sitk.GetArrayFromImage(control_mask)
-        # # check if at least they share one pixel
-        # if np.sum(mask*control_mask) != 0:
-        #     print(f'{name}: Touch!')
-        # else:
-        #     print(f'{name}: Not touch! <----------------------------')
+        # check with man_2
+        control_mask_dir = repo_path / 'experiments/inference/segmentation/data/predictions/full-size/man_2'
+        control_mask_path = control_mask_dir / name
+        control_mask = sitk.ReadImage(str(control_mask_path))
+        control_mask = sitk.GetArrayFromImage(control_mask)
+        # check if at least they share one pixel
+        if np.sum(mask*control_mask) != 0:
+            print(f'{name}: Touch!')
+        else:
+            print(f'{name}: Not touch! <----------------------------')
 
         mask = sitk.GetImageFromArray(mask)
         # save
