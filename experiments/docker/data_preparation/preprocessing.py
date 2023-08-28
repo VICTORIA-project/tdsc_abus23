@@ -58,19 +58,19 @@ def main():
         im_sitk = sitk.ReadImage(im_path)
         # store metadata
         metadata.loc[i, 'case_id'] = im_path.stem.split('_')[-1]
-        metadata.loc[i, 'data_path'] = 'DATA/'+im_path.name
+        metadata.loc[i, 'data_path'] = 'input/'+im_path.name
         metadata.loc[i, 'shape'] = im_sitk.GetSize()
     # save metadata
     metadata = metadata.sort_values(by=['case_id'])
     metadata.to_csv(data_directory / 'metadata.csv', index=False)
-
+    print('Metadata saved')
     
     ### 3. Create 2D images
     metadata = pd.read_csv(data_directory / 'metadata.csv')
     iter = tqdm(metadata.iterrows(), total=len(metadata))
     # get example image
     for i, row in metadata.iterrows():    
-        image_path = data_directory /  row['data_path']
+        image_path = repo_path /  row['data_path']
         # get image and label
         im = sitk.GetArrayFromImage(sitk.ReadImage(image_path))
 
@@ -102,6 +102,7 @@ def main():
         # emergency stop
         if i == stopping:
             break
+    print('2D images saved')
 
 if __name__ == '__main__':
     main()
