@@ -19,7 +19,7 @@ COPY --chown=usuari:usuari requirements.txt /opt/usuari/
 RUN python3 -m pip install --user -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 
 # Model checkpoints
-COPY --chown=usuari:usuari checkpoints/ /opt/usuari/checkpoints/
+COPY --chown=usuari:usuari checkpoints/sam_vit_b_01ec64.pth /opt/usuari/checkpoints/
 COPY --chown=usuari:usuari model_weights/ /opt/usuari/model_weights/
 # Source code
 COPY --chown=usuari:usuari SAMed/segment_anything/ /opt/usuari/SAMed/segment_anything/
