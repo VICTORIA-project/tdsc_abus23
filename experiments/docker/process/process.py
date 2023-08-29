@@ -84,8 +84,6 @@ class lesion_seg:
 
 
         # remove folder if exists, always starts from scratch
-        if self.slices_dir.exists():
-            shutil.rmtree(self.slices_dir)
         self.slices_dir.mkdir(exist_ok=True, parents=True)
 
         # transforms
@@ -134,6 +132,7 @@ class lesion_seg:
         original_shape = self.save_slices(image_path) # save slices and get original shape
         prob_map = self.md.process_image(slices_dir=self.slices_dir, original_shape=original_shape)
         # save the prob map as numpy array
+        self.probs_dir.mkdir(exist_ok=True, parents=True)
         np.save(self.probs_dir / 'prob_map.npy', prob_map)
 
     def seed_definition(self):
@@ -195,15 +194,19 @@ class lesion_seg:
     def segment(self):
         # given the images found in the input dir
         image_paths = list(self.input_dir.glob("*"))
-        image_path = image_paths[0] # loop here
-
-        # create prob map
-        self.prob_map(image_path)
-        # create seed
-        self.seed_definition()
-        # postprocess
-        mask = self.postprocess()
-        # save
-        mask = sitk.GetImageFromArray(mask)
-        # write
-        sitk.WriteImage(mask, str(self.output_dir / ('MASK_'+image_path.name.split('_')[1])))
+        
+        for image_path in image_paths:
+            
+            print(f'Processing patient: {image_path.name.split("_")[1].split(".")[0]}')
+            if self.cached_dir.exists(): # always start from scratch
+                shutil.rmtree(self.cached_dir)
+            # create prob map
+            self.prob_map(image_path)
+            # create seed
+            self.seed_definition()
+            # postprocess
+            mask = self.postprocess()
+            # save
+            mask = sitk.GetImageFromArray(mask)
+            # write
+            sitk.WriteImage(mask, str(self.output_dir / ('MASK_'+image_path.name.split('_')[1])))
