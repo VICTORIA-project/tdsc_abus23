@@ -162,8 +162,7 @@ class lesion_seg:
 
         # save as numpy
         saving_path = saving_dir / 'seed.npy'
-        np.save(saving_path, seed)
-                
+        np.save(saving_path, seed)           
 
     def postprocess(self):
         # HP
@@ -211,3 +210,5 @@ class lesion_seg:
             # write
             sitk.WriteImage(mask, str(self.output_dir / ('MASK_'+image_path.name.split('_')[1])))
 
+if __name__ == "__main__":
+    lesion_seg().segment()
