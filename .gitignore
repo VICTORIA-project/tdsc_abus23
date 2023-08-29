@@ -8,6 +8,7 @@ model_weights/
 input/
 predict/
 cached_data/
+exit/
 
 # ignore SAMed library files
 experiments/SAMed_babies/SAMed

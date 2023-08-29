@@ -57,6 +57,7 @@ class lesion_seg:
         self.input_dir = repo_path / 'input'# if docker_running else repo_path / 'input'
         print(f'The content of the input dir:{self.input_dir} is: {os.listdir(self.input_dir)}')
         self.output_dir = repo_path / 'predict' / 'Segmentation' #if docker_running else Path(repo_path / 'predict' / 'Segmentation')
+        # show ls -la of repo_path
         self.output_dir.mkdir(parents=True, exist_ok=True) # make sure the output dir exists
         self.checkpoint_dir = repo_path / 'checkpoints' / 'sam_vit_b_01ec64.pth'
         self.cached_dir = repo_path / 'cached_data'
