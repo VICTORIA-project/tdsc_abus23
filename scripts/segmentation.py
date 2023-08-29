@@ -32,7 +32,7 @@ from monai.transforms import (
 
 
 # special imports
-from datasets_utils.datasets import ABUS_test, slice_number
+from datasets_utils.datasets import ABUS_test
 sys.path.append(str(repo_path / 'SAMed')) if str(repo_path / 'SAMed') not in sys.path else None
 from SAMed.segment_anything import sam_model_registry
 

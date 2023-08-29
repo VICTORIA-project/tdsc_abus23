@@ -210,3 +210,4 @@ class lesion_seg:
             mask = sitk.GetImageFromArray(mask)
             # write
             sitk.WriteImage(mask, str(self.output_dir / ('MASK_'+image_path.name.split('_')[1])))
+
