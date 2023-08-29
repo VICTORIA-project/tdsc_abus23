@@ -19,7 +19,7 @@ import torch
 import numpy as np
 from importlib import import_module
 import copy
-import tqdm
+from tqdm import tqdm
 from PIL import Image
 import torchvision
 from torch.utils.data import DataLoader
@@ -102,7 +102,7 @@ class USSegmentation:
         for model in self.models: # for each model learned
 
             model_mask = [] # for appending slices of same model
-            for sample_batch in tqdm(valloader, total=len(valloader), desc='Slices'):
+            for sample_batch in tqdm(valloader, total=len(valloader), desc='Processing slices'):
                 with torch.no_grad():
                     # get data
                     image_batch = sample_batch["image"].to(self.device)
