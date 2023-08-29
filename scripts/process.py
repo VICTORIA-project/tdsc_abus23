@@ -9,7 +9,7 @@ if not docker_running: # if we are running locally
     while '.gitignore' not in os.listdir(repo_path): # while not in the root of the repo
         repo_path = repo_path.parent #go up one level
 else: # if running in the container
-    repo_path = Path('opt/usuari')
+    repo_path = Path('/opt/usuari')
 sys.path.insert(0,str(repo_path)) if str(repo_path) not in sys.path else None
 import SimpleITK as sitk
 import numpy as np

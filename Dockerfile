@@ -22,12 +22,15 @@ RUN python3 -m pip install --user -r requirements.txt -i https://mirrors.aliyun.
 COPY --chown=usuari:usuari checkpoints/ /opt/usuari/checkpoints/
 COPY --chown=usuari:usuari model_weights/ /opt/usuari/model_weights/
 # Source code
-COPY --chown=usuari:usuari SAMed/segment_anything/ /opt/usuari/segment_anything/
-COPY --chown=usuari:usuari SAMed/sam_lora_image_encoder.py /opt/usuari/
-COPY --chown=usuari:usuari SAMed/sam_lora_image_encoder_mask_decoder.py /opt/usuari/
+COPY --chown=usuari:usuari SAMed/segment_anything/ /opt/usuari/SAMed/segment_anything/
+COPY --chown=usuari:usuari SAMed/sam_lora_image_encoder.py /opt/usuari/SAMed/
+COPY --chown=usuari:usuari SAMed/sam_lora_image_encoder_mask_decoder.py /opt/usuari//SAMed/
 COPY --chown=usuari:usuari scripts/process.py /opt/usuari/
 COPY --chown=usuari:usuari scripts/segmentation.py /opt/usuari/
-COPY --chown=usuari:usuari datasets_utils/ . /opt/usuari/
+COPY --chown=usuari:usuari datasets_utils/ /opt/usuari/datasets_utils/
+
+# show the directory contents
+RUN ls -la /opt/usuari/
 
 # Set the default command to run when starting the container
 ENTRYPOINT python3 -m process $0 $@
