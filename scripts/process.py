@@ -54,10 +54,12 @@ def lcc(mask:np.array):
 class lesion_seg:
     def __init__(self):
         # define paths
-        self.input_dir = repo_path / 'input'# if docker_running else repo_path / 'input'
+        self.input_dir = Path('/input') if docker_running else repo_path / 'input'
         print(f'The content of the input dir:{self.input_dir} is: {os.listdir(self.input_dir)}')
-        self.output_dir = repo_path / 'predict' / 'Segmentation' #if docker_running else Path(repo_path / 'predict' / 'Segmentation')
-        # show ls -la of repo_path
+        self.output_dir = Path('/predict') / 'Segmentation' if docker_running else Path(repo_path / 'predict' / 'Segmentation')
+        # if exists, delete output dir
+        if self.output_dir.exists():
+            shutil.rmtree(self.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True) # make sure the output dir exists
         self.checkpoint_dir = repo_path / 'checkpoints' / 'sam_vit_b_01ec64.pth'
         self.cached_dir = repo_path / 'cached_data'

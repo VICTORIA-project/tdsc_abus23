@@ -9,6 +9,7 @@ input/
 predict/
 cached_data/
 exit/
+dockerimages/
 
 # ignore SAMed library files
 experiments/SAMed_babies/SAMed

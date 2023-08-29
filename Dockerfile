@@ -28,11 +28,22 @@ COPY --chown=usuari:usuari scripts/process.py /opt/usuari/
 COPY --chown=usuari:usuari scripts/segmentation.py /opt/usuari/
 COPY --chown=usuari:usuari datasets_utils/ /opt/usuari/datasets_utils/
 # create input and predict directories
-RUN mkdir /opt/usuari/input
-RUN mkdir /opt/usuari/predict
+# RUN mkdir /opt/usuari/input
+# RUN mkdir /opt/usuari/predict
+
+USER 0
+RUN mkdir /input
+RUN mkdir /predict
+RUN chmod 777 /input
+RUN chmod 777 /predict
+# change ownership of the directories to the user
+RUN chown -R usuari:usuari /input
+RUN chown -R usuari:usuari /predict
+
+USER usuari
 
 # show the directory contents in the root
-RUN ls -l /opt/usuari
+RUN ls -la /
 
 # Set the default command to run when starting the container
 ENTRYPOINT python3 -m process $0 $@
