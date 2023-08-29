@@ -19,18 +19,19 @@ import torch
 from segmentation import USSegmentation
 
 
-class Nodule_seg:
+class lesion_seg:
     def __init__(self):
 
         self.input_dir = Path('./input/') if docker_running else repo_path / 'input'
-        self.output_dir = Path('./predict') if docker_running else Path(repo_path / 'predict')
+        self.output_dir = Path('./predict') / 'Segmentation' if docker_running else Path(repo_path / 'predict' / 'Segmentation')
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         self.checkpoint_dir = repo_path / 'checkpoints' / 'sam_vit_b_01ec64.pth'
         self.md = USSegmentation(self.checkpoint_dir)
         load_success = self.md.load_model()
         if load_success:
             print("Successfully loaded models")
 
-    def load_image(self, image_path) -> SimpleITK.Image:
+    def load_sitk(self, image_path) -> SimpleITK.Image:
         image = SimpleITK.ReadImage(str(image_path))
         return image
 
@@ -56,6 +57,6 @@ class Nodule_seg:
         image_paths = list(self.input_dir.glob("*"))
         for image_path in image_paths:
             image_name = os.path.basename(image_path).split('.')[0]
-            image = self.load_image(image_path)
-            result = self.predict(image)
+            image_sitk = self.load_sitk(image_path)
+            result = self.predict(image_sitk)
             self.write_outputs(image_name, result)

@@ -73,7 +73,7 @@ def main():
     # get example image
     for i, row in metadata.iterrows():    
         image_path = repo_path /  row['data_path']
-        # get image and label
+        # get image
         im = sitk.GetArrayFromImage(sitk.ReadImage(image_path))
 
         # now, we complete the images and labels to the expansion variables

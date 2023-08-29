@@ -16,15 +16,20 @@ os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
 import torch
+import numpy as np
 from importlib import import_module
 import copy
-
+import tqdm
+from PIL import Image
+import torchvision
+from torch.utils.data import DataLoader
 from monai.transforms import (
     Compose,
     ScaleIntensityd,
     EnsureTyped,
     Resized,
 )
+
 
 # special imports
 from datasets_utils.datasets import ABUS_test, slice_number
@@ -39,11 +44,11 @@ class USSegmentation:
             checkpoint_path (Pathorstr): path to the checkpoint file, for the SAM model
         """
         # HP
-        num_classes = 1
-        image_size = 512
+        self.num_classes = 1
+        self.image_size = 512
 
-        sam, _ = sam_model_registry['vit_b'](image_size=image_size,
-                                                num_classes=num_classes,
+        sam, _ = sam_model_registry['vit_b'](image_size=self.image_size,
+                                                num_classes=self.num_classes,
                                                 checkpoint=str(checkpoint_path),
                                                 pixel_mean=[0, 0, 0],
                                                 pixel_std=[1, 1, 1])
@@ -57,7 +62,7 @@ class USSegmentation:
         self.test_transform = Compose(
                     [
                         ScaleIntensityd(keys=["image"]),
-                        Resized(keys=["image"], spatial_size=(image_size, image_size),mode=['area']),
+                        Resized(keys=["image"], spatial_size=(self.image_size, self.image_size),mode=['area']),
                         EnsureTyped(keys=["image"])
                     ])
 
@@ -80,19 +85,57 @@ class USSegmentation:
 
         return True # for logical purposes
 
-    def process_image(self, input_image):
-        image = self.test_transform({"image": input_image})["image"]
-        image = image.to(device=self.device).unsqueeze(0)
-        input_h_flipped = self.h_flip(image)
-        final_output = torch.zeros((1, 4, 256, 256), dtype=torch.float32).to(self.device)
-        for i in range(5):
-            self.models[i].eval()
-            outputs = self.models[i](image, True, 256)
-            outputs_h_flip = self.models[i](input_h_flipped, True, 256)
+    def process_image(self, slices_dir, original_shape):
 
-            output_masks_t = (outputs['masks'] + self.h_flip(outputs_h_flip['masks'])) / 2
-            final_output += output_masks_t
+        # get all files in the folder in a list, only mha files
+        slice_files = [file for file in os.listdir(slices_dir) if file.endswith('.mha')] # unordered files
+        slice_files = sorted(slice_files, key=lambda x: int(x.split('.')[0].split('_')[1]))
 
-        output_masks = torch.argmax(torch.softmax(final_output / 5, dim=1), dim=1, keepdim=True)
+        # create useful paths
+        image_files = np.array([slices_dir / i for i in slice_files])
+        db_val = ABUS_test(transform=self.test_transform,list_dir=image_files)   
+        valloader = DataLoader(db_val, batch_size=32, shuffle=False, num_workers=12, pin_memory=True)
 
-        return output_masks
+        # 2. Create probability volume
+        accumulated_mask = torch.zeros((len(db_val),self.num_classes+1,self.image_size,self.image_size)) # store final mask per patient
+
+        for model in self.models: # for each model learned
+
+            model_mask = [] # for appending slices of same model
+            for sample_batch in tqdm(valloader, total=len(valloader), desc='Slices'):
+                with torch.no_grad():
+                    # get data
+                    image_batch = sample_batch["image"].to(self.device)
+                    # forward and losses computing
+                    outputs = model(image_batch, True, self.image_size)
+                    # stack the masks
+                    model_mask.append(outputs['masks'].detach().cpu())
+            # stack tensors in a single one
+            model_mask = torch.cat(model_mask, dim=0)
+            accumulated_mask += model_mask
+        print(f'The shape of the accumulated mask is {accumulated_mask.shape}')
+
+        # get the mean
+        accumulated_mask /= len(self.models)
+        accumulated_mask = torch.softmax(accumulated_mask, dim=1)[:,1] # get lesion probability
+        accumulated_mask = accumulated_mask.cpu().numpy()
+
+        # reshape each slice
+        x_expansion = 865
+        y_expansion = 865
+        resized_mask = []
+        for slice_num in tqdm(range(accumulated_mask.shape[0])):
+            im_slice = accumulated_mask[slice_num,:,:]
+            im_slice = Image.fromarray(im_slice)
+            im_slice_comeback = torchvision.transforms.Resize(
+                (x_expansion, y_expansion),
+                interpolation= torchvision.transforms.InterpolationMode.BILINEAR, # bilineal or nearest? probs bilineal
+                )(im_slice)
+            resized_mask.append(im_slice_comeback)
+        # stack all slices
+        resized_mask = np.stack(resized_mask, axis=0)
+        # get original size and save
+        final_mask = resized_mask[:,:original_shape[1],:original_shape[0]]
+        print(f'The shape of the final output is {final_mask.shape}')
+
+        return final_mask
