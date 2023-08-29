@@ -2,7 +2,7 @@
 FROM pytorch/pytorch:2.0.0-cuda11.7-cudnn8-devel
 # FROM pytorch/pytorch:1.9.1-cuda11.1-cudnn8-devel
 
-# create user and set bash as default shell
+# create user and set bash as default shell, give permissions
 RUN useradd -ms /bin/bash usuari
 
 # Switch to the user to run the application.
@@ -28,9 +28,12 @@ COPY --chown=usuari:usuari SAMed/sam_lora_image_encoder_mask_decoder.py /opt/usu
 COPY --chown=usuari:usuari scripts/process.py /opt/usuari/
 COPY --chown=usuari:usuari scripts/segmentation.py /opt/usuari/
 COPY --chown=usuari:usuari datasets_utils/ /opt/usuari/datasets_utils/
+# create input and predict directories
+RUN mkdir /opt/usuari/input
+RUN mkdir /opt/usuari/predict
 
-# show the directory contents
-RUN ls -la /opt/usuari/
+# show the directory contents in the root
+RUN ls -l /opt/usuari
 
 # Set the default command to run when starting the container
 ENTRYPOINT python3 -m process $0 $@

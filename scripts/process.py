@@ -54,8 +54,9 @@ def lcc(mask:np.array):
 class lesion_seg:
     def __init__(self):
         # define paths
-        self.input_dir = Path('./input/') if docker_running else repo_path / 'input'
-        self.output_dir = Path('./predict') / 'Segmentation' if docker_running else Path(repo_path / 'predict' / 'Segmentation')
+        self.input_dir = repo_path / 'input'# if docker_running else repo_path / 'input'
+        print(f'The content of the input dir:{self.input_dir} is: {os.listdir(self.input_dir)}')
+        self.output_dir = repo_path / 'predict' / 'Segmentation' #if docker_running else Path(repo_path / 'predict' / 'Segmentation')
         self.output_dir.mkdir(parents=True, exist_ok=True) # make sure the output dir exists
         self.checkpoint_dir = repo_path / 'checkpoints' / 'sam_vit_b_01ec64.pth'
         self.cached_dir = repo_path / 'cached_data'
@@ -209,6 +210,7 @@ class lesion_seg:
             mask = sitk.GetImageFromArray(mask)
             # write
             sitk.WriteImage(mask, str(self.output_dir / ('MASK_'+image_path.name.split('_')[1])))
+        print(f'The content of the output dir:{self.output_dir} is: {os.listdir(self.output_dir)}')
 
 if __name__ == "__main__":
     lesion_seg().segment()
