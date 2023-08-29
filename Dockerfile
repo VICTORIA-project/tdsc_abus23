@@ -1,5 +1,6 @@
 # base image
-FROM pytorch/pytorch:2.0.0-cuda11.7-cudnn8-runtime
+FROM pytorch/pytorch:2.0.0-cuda11.7-cudnn8-devel
+# FROM pytorch/pytorch:1.9.1-cuda11.1-cudnn8-devel
 
 # create user and set bash as default shell
 RUN useradd -ms /bin/bash usuari
@@ -24,7 +25,9 @@ COPY --chown=usuari:usuari model_weights/ /opt/usuari/model_weights/
 COPY --chown=usuari:usuari SAMed/segment_anything/ /opt/usuari/segment_anything/
 COPY --chown=usuari:usuari SAMed/sam_lora_image_encoder.py /opt/usuari/
 COPY --chown=usuari:usuari SAMed/sam_lora_image_encoder_mask_decoder.py /opt/usuari/
-COPY --chown=usuari:usuari experiments/docker/. /opt/usuari/scripts
+COPY --chown=usuari:usuari scripts/process.py /opt/usuari/
+COPY --chown=usuari:usuari scripts/segmentation.py /opt/usuari/
+COPY --chown=usuari:usuari datasets_utils/ . /opt/usuari/
 
 # Set the default command to run when starting the container
 ENTRYPOINT python3 -m process $0 $@

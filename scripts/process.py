@@ -1,5 +1,5 @@
 # running as docker?
-docker_running = False
+docker_running = True
 
 # define repo path and add it to the path
 from pathlib import Path
