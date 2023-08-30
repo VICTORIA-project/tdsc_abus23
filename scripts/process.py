@@ -18,6 +18,7 @@ from PIL import Image
 from torchvision.transforms import Compose, Resize, InterpolationMode
 import shutil
 from scipy.ndimage import label, generate_binary_structure
+import pandas as pd
 
 
 # special imports
@@ -51,17 +52,49 @@ def lcc(mask:np.array):
 
     return largest_component_mask
 
+def get_center_length(mask):
+
+    # Get the non-zero indices
+    non_zero_indices = np.nonzero(mask)
+
+    min_z = np.min(non_zero_indices[2])
+    min_y = np.min(non_zero_indices[1])
+    min_x = np.min(non_zero_indices[0])
+    max_z = np.max(non_zero_indices[2])
+    max_y = np.max(non_zero_indices[1])
+    max_x = np.max(non_zero_indices[0])
+
+    # Get the center of the lesion
+    center_z = (min_z + max_z) / 2
+    center_y = (min_y + max_y) / 2
+    center_x = (min_x + max_x) / 2
+
+    center = [center_x, center_y, center_z]
+
+    # Get the length of the lesion
+    length_z = max_z - min_z
+    length_y = max_y - min_y
+    length_x = max_x - min_x
+
+    length = [length_x, length_y, length_z]
+
+    return center, length
+
 class lesion_seg:
     def __init__(self):
         # define paths
         self.input_dir = Path('/input') if docker_running else repo_path / 'input'
+        # self.input_dir = repo_path / 'data/challange_2023/Val/DATA'
         print(f'The content of the input dir:{self.input_dir} is: {os.listdir(self.input_dir)}')
         self.output_dir = Path('/predict') / 'Segmentation' if docker_running else Path(repo_path / 'predict' / 'Segmentation')
         # if exists, delete output dir
         if self.output_dir.exists():
             shutil.rmtree(self.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True) # make sure the output dir exists
+        self.detection_dir = self.output_dir.parent / 'Detection'
+        self.detection_dir.mkdir(parents=True, exist_ok=True) # make sure the detection dir exists
         self.checkpoint_dir = repo_path / 'checkpoints' / 'sam_vit_b_01ec64.pth'
+        # self.checkpoint_dir = repo_path / 'checkpoints' / 'sam_vit_h_4b8939.pth'
         self.cached_dir = repo_path / 'cached_data'
         self.cached_dir.mkdir(parents=True, exist_ok=True) # create cached dir in root
         self.slices_dir = self.cached_dir / 'slices'
@@ -139,7 +172,7 @@ class lesion_seg:
         self.probs_dir.mkdir(exist_ok=True, parents=True)
         np.save(self.probs_dir / 'prob_map.npy', prob_map)
 
-    def seed_definition(self):
+    def seed_definition(self, image_path:Path):
         """constructs and saves seed using the probability map already saved by prob_map method
         """
 
@@ -163,6 +196,18 @@ class lesion_seg:
 
         # get lcc
         seed = lcc(seed)
+
+        # # check with man_2
+        # control_mask_dir = repo_path / 'experiments/inference/segmentation/data/predictions/full-size/man_2'
+        # name = 'MASK_'+ image_path.name.split('.')[0].split('_')[1] + '.nii.gz'
+        # control_mask_path = control_mask_dir / name
+        # control_mask = sitk.ReadImage(str(control_mask_path))
+        # control_mask = sitk.GetArrayFromImage(control_mask)
+        # # check if at least they share one pixel
+        # if np.sum(seed*control_mask) != 0:
+        #     print(f'{name}: Touch!')
+        # else:
+        #     print(f'{name}: Not touch! <----------------------------')
 
         # save as numpy
         saving_path = saving_dir / 'seed.npy'
@@ -194,10 +239,36 @@ class lesion_seg:
 
         return mask
     
+    def detection(self, mask:np.array, image_path:Path):
+        """given the mask and the current path (for naming) the detection metrics are computed
+
+        Args:
+            mask (np.array): mask of the lesion
+            image_path (Path): Path of the original image for naming
+
+        Returns:
+            pd.Dataframe: dataframe with the metrics
+        """
+        # get the center and length of the lesion
+        center, length = get_center_length(mask)
+        # compute mean of probabilities inside the lesion
+        probs_path = repo_path / self.probs_dir / 'prob_map.npy'
+        probs = np.load(probs_path)
+
+        inner_probs = probs[mask==1]
+        mean_inner_probs = np.mean(inner_probs)
+        # create individual dataframe
+        dataframe = pd.DataFrame(columns=['public_id', 'coordX', 'coordY', 'coordZ', 'x_length', 'y_length', 'z_length', 'probability'])
+        dataframe.loc[0] = [image_path.stem.split('_')[1], center[0], center[1], center[2], length[0], length[1], length[2], mean_inner_probs]
+
+        return dataframe
+
     def segment(self):
         # given the images found in the input dir
         image_paths = list(self.input_dir.glob("*"))
+        image_paths.sort()
         
+        detection_main = None
         for image_path in image_paths:
             
             print(f'Processing patient: {image_path.name.split("_")[1].split(".")[0]}')
@@ -206,14 +277,20 @@ class lesion_seg:
             # create prob map
             self.prob_map(image_path)
             # create seed
-            self.seed_definition()
+            self.seed_definition(image_path)
             # postprocess
             mask = self.postprocess()
+            # detection
+            detection_df = self.detection(mask, image_path)
+            detection_main = pd.concat([detection_main, detection_df], ignore_index=True)
             # save
             mask = sitk.GetImageFromArray(mask)
             # write
             sitk.WriteImage(mask, str(self.output_dir / ('MASK_'+image_path.name.split('_')[1])))
         print(f'The content of the output dir:{self.output_dir} is: {os.listdir(self.output_dir)}')
+        # save detection
+        detection_main.to_csv(self.detection_dir / 'detection.csv', index=False)
+
 
 if __name__ == "__main__":
     lesion_seg().segment()
