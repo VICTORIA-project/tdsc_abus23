@@ -1,5 +1,5 @@
 # settings:
-run_name: full-slice-lesion
+run_name: trial
 from_fold: 0
 data_path: data/challange_2023/Train/full-slice_512x512_with-lesion
 pretrained_path: null

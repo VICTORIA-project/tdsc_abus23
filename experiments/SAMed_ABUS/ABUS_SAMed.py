@@ -232,8 +232,8 @@ def main(fold_n:int, train_ids:list, val_ids:list):
     db_val = ABUS_dataset(transform=val_transform,list_dir=list_val)   
 
     # define dataloaders
-    trainloader = DataLoader(db_train, batch_size=args.train_batch_size, shuffle=True, num_workers=8, pin_memory=True)
-    valloader = DataLoader(db_val, batch_size=args.val_batch_size, shuffle=True, num_workers=8, pin_memory=True)
+    trainloader = DataLoader(db_train, batch_size=args.train_batch_size, shuffle=False, num_workers=4, pin_memory=True)
+    valloader = DataLoader(db_val, batch_size=args.val_batch_size, shuffle=False, num_workers=4, pin_memory=True)
 
     # get SAM model
     sam, _ = sam_model_registry['vit_b'](image_size=256,
@@ -297,6 +297,7 @@ def main(fold_n:int, train_ids:list, val_ids:list):
         val_loss_dice = []
         
         # training time
+        print('started training')
         for sampled_batch in trainloader:
 
             with accelerator.accumulate(model): # forward and loss computing
@@ -372,6 +373,7 @@ def main(fold_n:int, train_ids:list, val_ids:list):
         logs_epoch = {"train_total_loss": train_loss_ce_mean+train_loss_dice_mean, "train_loss_ce": train_loss_ce_mean, "train_loss_dice": train_loss_dice_mean}
         accelerator.log(values=logs_epoch, step=iter_num)
         
+        print('started validation')
         # validation time
         model.eval()
         for i_batch, sampled_batch in enumerate(valloader):
