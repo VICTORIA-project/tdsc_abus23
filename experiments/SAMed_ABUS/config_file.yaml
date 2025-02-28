@@ -1,5 +1,5 @@
 # settings:
-run_name: full-slice-lesion
+run_name: trial
 from_fold: 0
 data_path: data/challange_2023/Train/full-slice_512x512_with-lesion
 pretrained_path: null
@@ -15,7 +15,7 @@ base_lr: 0.001
 num_classes: 1
 train_batch_size: 16
 max_epoch: 100
-val_batch_size: 24
+val_batch_size: 8
 multimask_output: true
 warmup: false
 warmup_period: 1000

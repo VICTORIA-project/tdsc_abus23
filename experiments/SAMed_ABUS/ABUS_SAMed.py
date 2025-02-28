@@ -67,7 +67,7 @@ class ABUS_dataset(Dataset):
         images = [SimpleITK.GetArrayFromImage(SimpleITK.ReadImage(str(i))) for i in list_dir[0]]
         labels = [SimpleITK.GetArrayFromImage(SimpleITK.ReadImage(str(i))) for i in list_dir[1]]
 
-        self.sample_list = np.array(list(zip(images,labels)))
+        self.sample_list = list(zip(images,labels))
         
         self.resize=Compose([Resized(keys=["label"], spatial_size=(64, 64),mode=['nearest'])])
 
@@ -134,7 +134,7 @@ def main(fold_n:int, train_ids:list, val_ids:list):
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         mixed_precision=args.mixed_precision,
         log_with=args.report_to, # logger (wandb or tensorboard)
-        logging_dir=logging_dir, # defined above
+        project_dir=logging_dir, # defined above
         project_config=accelerator_project_config, # project config defined above
     )
     # Make one log on every process with the configuration for debugging.
@@ -451,3 +451,4 @@ if __name__ == '__main__':
     kf = KFold(n_splits=args.num_folds,shuffle=args.split_shuffle,random_state=args.split_seed)
     for fold_n, (train_ids, val_ids) in enumerate(kf.split(range(100))):
         main(fold_n, train_ids, val_ids) 
+        break # only one fold for now
